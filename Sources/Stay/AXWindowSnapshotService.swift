@@ -90,8 +90,11 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                 }
             }
 
+            let hasLayeredFallbackWindows = fallbackWindows.contains(where: { $0.layer > 0 })
+            let hasAllWindowListCountAdvantage =
+                fallbackSource == "all-window-list" && fallbackWindows.count > appSnapshots.count
             let shouldMergeFallbackWindows =
-                appSnapshots.isEmpty || fallbackWindows.contains(where: { $0.layer > 0 })
+                appSnapshots.isEmpty || hasLayeredFallbackWindows || hasAllWindowListCountAdvantage
 
             if !fallbackWindows.isEmpty, shouldMergeFallbackWindows {
                 var knownFrameKeys = Set(appSnapshots.map(snapshotFrameIdentityKey))
@@ -133,7 +136,7 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                 }
             } else if !fallbackWindows.isEmpty, !appSnapshots.isEmpty {
                 logger.debug(
-                    "Skipped WindowServer fallback merge for pid=\(app.processIdentifier, privacy: .public) because AX already captured windows and fallback has no non-zero-layer windows"
+                    "Skipped WindowServer fallback merge for pid=\(app.processIdentifier, privacy: .public) because AX already captured windows and fallback did not add expected extra windows (source=\(fallbackSource, privacy: .public) fallbackCount=\(fallbackWindows.count, privacy: .public) axCount=\(appSnapshots.count, privacy: .public))"
                 )
             }
 
@@ -178,6 +181,7 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         // "Deferred" snapshots are windows we intentionally skip this attempt
         // because AX has not exposed enough windows for a safe restore yet.
         var deferredSnapshotCount = 0
+        var resolvedSnapshots: [WindowSnapshot] = []
         logger.info(
             "Starting restore for \(snapshots.count, privacy: .public) snapshot(s) across \(grouped.count, privacy: .public) app(s)"
         )
@@ -187,11 +191,8 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         for (appPID, appSnapshots) in grouped {
             let appElement = AXUIElementCreateApplication(appPID)
             var windows = windowsForAppElement(appElement)
-            let requiresExpandedExposure = requiresExpandedWindowExposure(
-                appSnapshots: appSnapshots,
-                visibleWindowCount: windows.count
-            )
-            if windows.isEmpty || requiresExpandedExposure,
+            let requiresFullExposure = appSnapshots.count > 1 && windows.count < appSnapshots.count
+            if windows.isEmpty || requiresFullExposure,
                 isAppRunning(pid: appPID),
                 appPID != originalFrontmostPID,
                 activateAppForWindowExposure(pid: appPID)
@@ -201,7 +202,7 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                     "Activated app pid=\(appPID, privacy: .public) to expose AX windows for restore"
                 )
                 let minimumExpectedWindowCount =
-                    requiresExpandedExposure
+                    requiresFullExposure
                     ? appSnapshots.count
                     : max(1, windows.count)
                 windows = waitForWindowExposure(
@@ -210,7 +211,7 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                 )
             }
 
-            if requiresExpandedExposure && windows.count < appSnapshots.count {
+            if appSnapshots.count > 1, windows.count < appSnapshots.count {
                 recoverableFailureCount += appSnapshots.count
                 deferredSnapshotCount += appSnapshots.count
                 logger.warning(
@@ -252,6 +253,7 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                         unusedIndices: unusedIndices
                     )
                 else {
+                    recoverableFailureCount += 1
                     logger.debug(
                         "Could not match snapshot window for pid=\(appPID, privacy: .public) title=\(String(describing: snapshot.windowTitle), privacy: .public) index=\(snapshot.windowIndex, privacy: .public)"
                     )
@@ -267,11 +269,22 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                     isApproximatelySameFrame(currentFrame, adjustedFrame)
                 {
                     alreadyAlignedCount += 1
+                    resolvedSnapshots.append(snapshot)
                     continue
                 }
                 let setFrameResult = setFrame(adjustedFrame, for: windows[windowIndex])
                 if setFrameResult.success {
-                    movedWindowCount += 1
+                    // Some apps report AX success but immediately snap windows back.
+                    // Count a move only after the frame actually converges.
+                    if didFrameConverge(for: windows[windowIndex], expectedFrame: adjustedFrame) {
+                        movedWindowCount += 1
+                        resolvedSnapshots.append(snapshot)
+                    } else {
+                        recoverableFailureCount += 1
+                        logger.warning(
+                            "AX setFrame reported success but frame did not converge for pid=\(appPID, privacy: .public) title=\(String(describing: snapshot.windowTitle), privacy: .public) index=\(windowIndex, privacy: .public)"
+                        )
+                    }
                 } else {
                     if isRecoverableAXError(setFrameResult.position)
                         || isRecoverableAXError(setFrameResult.size)
@@ -298,7 +311,8 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
             movedWindowCount: movedWindowCount,
             alreadyAlignedCount: alreadyAlignedCount,
             recoverableFailureCount: recoverableFailureCount,
-            deferredSnapshotCount: deferredSnapshotCount
+            deferredSnapshotCount: deferredSnapshotCount,
+            resolvedSnapshots: resolvedSnapshots
         )
     }
 
@@ -406,6 +420,26 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         )
 
         return SetFrameResult(position: positionResult, size: sizeResult)
+    }
+
+    private func didFrameConverge(for window: AXUIElement, expectedFrame: CGRect) -> Bool {
+        if let frame = frameForWindow(window),
+            isApproximatelySameFrame(frame, expectedFrame)
+        {
+            return true
+        }
+
+        let deadline = Date().addingTimeInterval(0.2)
+        while Date() < deadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.03))
+            if let frame = frameForWindow(window),
+                isApproximatelySameFrame(frame, expectedFrame)
+            {
+                return true
+            }
+        }
+
+        return false
     }
 
     private func stringValue(of element: AXUIElement, attribute: CFString) -> String? {
@@ -588,24 +622,6 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         default:
             return false
         }
-    }
-
-    private func requiresExpandedWindowExposure(
-        appSnapshots: [WindowSnapshot],
-        visibleWindowCount: Int
-    ) -> Bool {
-        guard appSnapshots.count > 1, visibleWindowCount < appSnapshots.count else {
-            return false
-        }
-
-        // Untitled multi-window snapshots are usually collected from WindowServer
-        // fallback, where apps (for example CAD tools) may hide windows from AX
-        // until activation.
-        let untitledSnapshotCount = appSnapshots.filter { snapshot in
-            snapshot.windowTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
-        }.count
-
-        return untitledSnapshotCount == appSnapshots.count
     }
 
     private func waitForWindowExposure(appElement: AXUIElement, minimumCount: Int) -> [AXUIElement]

@@ -465,6 +465,226 @@ struct SleepWakeCoordinatorTests {
         #expect(scheduler.pendingCount == 0)
     }
 
+    @Test("Resolved snapshots are pruned from later retry attempts")
+    func resolvedSnapshotsArePrunedAcrossRetries() {
+        let first = sampleSnapshot(title: "One", index: 0)
+        let second = sampleSnapshot(title: "Two", index: 1)
+        let third = sampleSnapshot(title: "Three", index: 2)
+        let snapshots = [first, second, third]
+
+        let capture = StubCaptureService()
+        capture.nextSnapshots = snapshots
+
+        let restore = SpyRestoreService()
+        restore.detailedResults = [
+            WindowRestoreResult(
+                isComplete: false,
+                movedWindowCount: 1,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 2,
+                deferredSnapshotCount: 0,
+                resolvedSnapshots: [first]
+            ),
+            WindowRestoreResult(
+                isComplete: false,
+                movedWindowCount: 1,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 1,
+                deferredSnapshotCount: 0,
+                resolvedSnapshots: [second]
+            ),
+            WindowRestoreResult(
+                isComplete: true,
+                movedWindowCount: 1,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 0,
+                deferredSnapshotCount: 0,
+                resolvedSnapshots: [third]
+            ),
+        ]
+
+        let repository = InMemoryRepository()
+        let scheduler = ManualScheduler()
+        let readiness = SequencedReadinessChecker([true])
+
+        let coordinator = SleepWakeCoordinator(
+            capturing: capture,
+            restoring: restore,
+            repository: repository,
+            readinessChecker: readiness,
+            scheduler: scheduler,
+            wakeDelay: 0,
+            retryInterval: 0.1,
+            maxWaitAfterWake: 120
+        )
+
+        coordinator.handleWillSleep()
+        coordinator.handleDidWake()
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 1)
+        #expect(restore.calls[0] == snapshots)
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 2)
+        #expect(restore.calls[1].count == 2)
+        #expect(!restore.calls[1].contains(first))
+        #expect(restore.calls[1].contains(second))
+        #expect(restore.calls[1].contains(third))
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 3)
+        #expect(restore.calls[2] == [third])
+        #expect(scheduler.pendingCount == 0)
+    }
+
+    @Test("Repeated moved-but-unchanged deferred residuals converge instead of looping")
+    func repeatedMovedDeferredResidualsConverge() {
+        let snapshots = [sampleSnapshot(title: "Finder", index: 0)]
+
+        let capture = StubCaptureService()
+        capture.nextSnapshots = snapshots
+
+        let restore = SpyRestoreService()
+        restore.detailedResults = [
+            WindowRestoreResult(
+                isComplete: false,
+                movedWindowCount: 1,
+                alreadyAlignedCount: 5,
+                recoverableFailureCount: 4,
+                deferredSnapshotCount: 4
+            ),
+            WindowRestoreResult(
+                isComplete: false,
+                movedWindowCount: 1,
+                alreadyAlignedCount: 5,
+                recoverableFailureCount: 4,
+                deferredSnapshotCount: 4
+            ),
+            WindowRestoreResult(
+                isComplete: false,
+                movedWindowCount: 1,
+                alreadyAlignedCount: 5,
+                recoverableFailureCount: 4,
+                deferredSnapshotCount: 4
+            ),
+        ]
+
+        let repository = InMemoryRepository()
+        let scheduler = ManualScheduler()
+        let readiness = SequencedReadinessChecker([true])
+
+        let coordinator = SleepWakeCoordinator(
+            capturing: capture,
+            restoring: restore,
+            repository: repository,
+            readinessChecker: readiness,
+            scheduler: scheduler,
+            wakeDelay: 0,
+            retryInterval: 0.1,
+            maxWaitAfterWake: 120,
+            maxStagnantAttemptsBeforeEnvironmentWait: 2
+        )
+
+        coordinator.handleWillSleep()
+        coordinator.handleDidWake()
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 1)
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 2)
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 3)
+        #expect(scheduler.pendingCount == 0)
+
+        coordinator.handleEnvironmentDidChange()
+        #expect(scheduler.pendingCount == 0)
+    }
+
+    @Test("Moved-count jitter with unchanged residual state converges")
+    func movedCountJitterConverges() {
+        let snapshots = [sampleSnapshot(title: "Finder", index: 0)]
+
+        let capture = StubCaptureService()
+        capture.nextSnapshots = snapshots
+
+        let restore = SpyRestoreService()
+        restore.detailedResults = [
+            WindowRestoreResult(
+                isComplete: false,
+                movedWindowCount: 5,
+                alreadyAlignedCount: 1,
+                recoverableFailureCount: 4,
+                deferredSnapshotCount: 4
+            ),
+            WindowRestoreResult(
+                isComplete: false,
+                movedWindowCount: 2,
+                alreadyAlignedCount: 5,
+                recoverableFailureCount: 4,
+                deferredSnapshotCount: 4
+            ),
+            WindowRestoreResult(
+                isComplete: false,
+                movedWindowCount: 1,
+                alreadyAlignedCount: 5,
+                recoverableFailureCount: 4,
+                deferredSnapshotCount: 4
+            ),
+            WindowRestoreResult(
+                isComplete: false,
+                movedWindowCount: 3,
+                alreadyAlignedCount: 5,
+                recoverableFailureCount: 4,
+                deferredSnapshotCount: 4
+            ),
+        ]
+
+        let repository = InMemoryRepository()
+        let scheduler = ManualScheduler()
+        let readiness = SequencedReadinessChecker([true])
+
+        let coordinator = SleepWakeCoordinator(
+            capturing: capture,
+            restoring: restore,
+            repository: repository,
+            readinessChecker: readiness,
+            scheduler: scheduler,
+            wakeDelay: 0,
+            retryInterval: 0.1,
+            maxWaitAfterWake: 120,
+            maxStagnantAttemptsBeforeEnvironmentWait: 2
+        )
+
+        coordinator.handleWillSleep()
+        coordinator.handleDidWake()
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 1)
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 2)
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 3)
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 4)
+        #expect(scheduler.pendingCount == 0)
+
+        coordinator.handleEnvironmentDidChange()
+        #expect(scheduler.pendingCount == 0)
+    }
+
     @Test("Environment change retriggers restore after timeout")
     func environmentChangeRetriggersRestoreAfterTimeout() {
         let snapshots = [sampleSnapshot(title: "Safari", index: 0)]

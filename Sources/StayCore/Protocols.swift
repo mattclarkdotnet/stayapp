@@ -11,19 +11,24 @@ public struct WindowRestoreResult: Equatable, Sendable {
     public var alreadyAlignedCount: Int
     public var recoverableFailureCount: Int
     public var deferredSnapshotCount: Int
+    // Snapshots that are now resolved (aligned or moved+converged) and should be
+    // removed from subsequent retry attempts in the same wake cycle.
+    public var resolvedSnapshots: [WindowSnapshot]
 
     public init(
         isComplete: Bool,
         movedWindowCount: Int = 0,
         alreadyAlignedCount: Int = 0,
         recoverableFailureCount: Int = 0,
-        deferredSnapshotCount: Int = 0
+        deferredSnapshotCount: Int = 0,
+        resolvedSnapshots: [WindowSnapshot] = []
     ) {
         self.isComplete = isComplete
         self.movedWindowCount = movedWindowCount
         self.alreadyAlignedCount = alreadyAlignedCount
         self.recoverableFailureCount = recoverableFailureCount
         self.deferredSnapshotCount = deferredSnapshotCount
+        self.resolvedSnapshots = resolvedSnapshots
     }
 
     public static let successfulNoop = WindowRestoreResult(
@@ -31,7 +36,8 @@ public struct WindowRestoreResult: Equatable, Sendable {
         movedWindowCount: 0,
         alreadyAlignedCount: 0,
         recoverableFailureCount: 0,
-        deferredSnapshotCount: 0
+        deferredSnapshotCount: 0,
+        resolvedSnapshots: []
     )
 }
 

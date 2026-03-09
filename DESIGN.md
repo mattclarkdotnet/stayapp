@@ -59,6 +59,8 @@ Why: capture as late as possible before sleep and keep a durable fallback.
 - Each attempt runs readiness checks; if not ready, it retries after a short interval.
 - Once ready (or timed out), restore is attempted and returns structured progress
   (`moved`, `already aligned`, `recoverable failures`, `deferred snapshots`).
+- Restore attempts now also return which snapshots were actually resolved; coordinator
+  removes those from the pending set so later retries only target unresolved windows.
 - Retries continue until either:
   - restore succeeds, or
   - retries stagnate (no progress), then the app waits for environment change, or
@@ -69,6 +71,9 @@ Why: capture as late as possible before sleep and keep a durable fallback.
     stagnation to avoid visible restore loops
 - If stagnation is reached and all remaining failures are deferred-only windows while visible
   windows are already aligned, Stay considers the cycle converged and clears restore state.
+- Repeated unchanged residual restore state (`recoverable failures`, `deferred count`,
+  `already aligned`) is treated as stagnation even if `moved > 0`, preventing false-progress
+  loops where one window keeps reporting as moved without reducing unresolved failures.
 
 Why: OS wake is often earlier than external monitor wake.
 
@@ -106,6 +111,9 @@ Why: avoids premature restore while monitors are still unavailable, but prevents
 - Partial merge is intentionally conservative: if AX already captured windows, extra
   fallback windows are merged only when fallback contains non-zero-layer windows
   (to avoid polluting snapshots with layer-0 duplicates/chrome from regular apps).
+- For multi-space scenarios, when full WindowServer all-window-list data contains
+  more windows than AX for the same app, Stay also merges distinct layer-0 fallback
+  windows so windows on non-active Spaces are not silently dropped at capture time.
 - Reads each window's frame (`kAXPositionAttribute`, `kAXSizeAttribute`).
 - Associates each window with a display ID via screen intersection/nearest-screen fallback.
 - Saves app/window identity fields (PID, title, index) and frame.
@@ -117,16 +125,19 @@ Why: avoids premature restore while monitors are still unavailable, but prevents
 - Reads current AX windows for each app.
 - If an app has no AX windows yet, attempts a temporary app activation nudge and retries
   AX window discovery before deferring to the next retry cycle.
-- For untitled multi-window snapshot sets (common with WindowServer fallback), if AX
-  still exposes fewer windows than expected, app restore is deferred and retried instead
-  of forcing partial/wrong matches.
+- For multi-window apps, if AX exposes fewer windows than captured snapshots, app restore
+  is deferred and retried instead of forcing partial/wrong matches.
 - Matches saved snapshots to live windows by title first, then nearest-frame scoring,
   then index fallback.
+- Unmatched snapshots are counted as recoverable failures; they are never silently ignored.
 - Before writing AX position/size, restore compares current and target frame and skips
   writes for windows that are already aligned within tolerance.
 - Restores frame using screen-aware adjustment:
   - prefer original display ID when available
   - clamp to visible area to avoid off-screen placement
+- AX setFrame "success" is verified by reading back the frame shortly after the write;
+  if the frame does not converge, the move is treated as recoverable failure so
+  coordinator retries instead of incorrectly declaring success.
 - Returns a structured restore outcome. Completion requires zero recoverable failures.
   Recoverable failures include transient AX conditions (for example, attribute unsupported
   immediately after wake) and running apps that temporarily expose zero AX windows.

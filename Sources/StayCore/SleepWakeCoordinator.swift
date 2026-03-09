@@ -28,6 +28,7 @@ public final class SleepWakeCoordinator {
     private var bestRecoverableFailureCount: Int?
     private var postTimeoutRetryCount = 0
     private var hasObservedPlacementProgress = false
+    private var lastIncompleteRestoreResult: WindowRestoreResult?
 
     public init(
         capturing: WindowSnapshotCapturing,
@@ -78,6 +79,7 @@ public final class SleepWakeCoordinator {
         bestRecoverableFailureCount = nil
         postTimeoutRetryCount = 0
         hasObservedPlacementProgress = false
+        lastIncompleteRestoreResult = nil
         if !snapshots.isEmpty {
             cachedSnapshots = snapshots
         }
@@ -124,6 +126,7 @@ public final class SleepWakeCoordinator {
         bestRecoverableFailureCount = nil
         postTimeoutRetryCount = 0
         hasObservedPlacementProgress = false
+        lastIncompleteRestoreResult = nil
         if let restoreDeadline {
             logger.info(
                 "Wake cycle started; awaiting restore for \(snapshots.count, privacy: .public) snapshot(s) with deadline \(restoreDeadline.ISO8601Format(), privacy: .public)"
@@ -205,6 +208,24 @@ public final class SleepWakeCoordinator {
             hasObservedPlacementProgress = true
         }
 
+        if !restoreResult.resolvedSnapshots.isEmpty {
+            let priorPendingCount = pendingRestoreSnapshots.count
+            pendingRestoreSnapshots = removingResolvedSnapshots(
+                from: pendingRestoreSnapshots,
+                resolved: restoreResult.resolvedSnapshots
+            )
+            logger.debug(
+                "Pruned resolved snapshots from pending set (resolved=\(restoreResult.resolvedSnapshots.count, privacy: .public) pendingBefore=\(priorPendingCount, privacy: .public) pendingAfter=\(self.pendingRestoreSnapshots.count, privacy: .public))"
+            )
+
+            if pendingRestoreSnapshots.isEmpty {
+                logger.info("Restore cycle completed after pruning all pending snapshots")
+                clearRestoreState()
+                lock.unlock()
+                return
+            }
+        }
+
         if timedOut {
             postTimeoutRetryCount += 1
             if postTimeoutRetryCount >= maxPostTimeoutEnvironmentRetries {
@@ -266,9 +287,26 @@ public final class SleepWakeCoordinator {
         bestRecoverableFailureCount = nil
         postTimeoutRetryCount = 0
         hasObservedPlacementProgress = false
+        lastIncompleteRestoreResult = nil
     }
 
     private func noteStagnationAndShouldWaitForEnvironment(_ result: WindowRestoreResult) -> Bool {
+        // Treat retries as equivalent when unresolved state is unchanged, even if
+        // movedWindowCount jitters; a single window can "move" repeatedly without
+        // reducing recoverable failures.
+        let repeatedResidualState: Bool
+        if let lastIncompleteRestoreResult {
+            repeatedResidualState =
+                lastIncompleteRestoreResult.recoverableFailureCount == result.recoverableFailureCount
+                && lastIncompleteRestoreResult.deferredSnapshotCount == result.deferredSnapshotCount
+                && lastIncompleteRestoreResult.alreadyAlignedCount == result.alreadyAlignedCount
+        } else {
+            repeatedResidualState = false
+        }
+        defer {
+            lastIncompleteRestoreResult = result
+        }
+
         if result.deferredSnapshotCount > 0, !hasObservedPlacementProgress {
             // Deferred snapshots indicate the app has not exposed all windows yet.
             // Before any placement progress, keep retrying on interval rather than
@@ -297,6 +335,19 @@ public final class SleepWakeCoordinator {
         }
 
         if result.movedWindowCount > 0 {
+            // A single window can report as moved repeatedly without net progress
+            // (for example, app immediately repositions it). Detect repeated
+            // unresolved outcomes so this does not create infinite retry loops.
+            if repeatedResidualState,
+                result.recoverableFailureCount == result.deferredSnapshotCount,
+                result.alreadyAlignedCount > 0
+            {
+                stagnantRestoreAttemptCount += 1
+                logger.debug(
+                    "Stagnation count incremented for unresolved deferred-only residuals (\(self.stagnantRestoreAttemptCount, privacy: .public)/\(self.maxStagnantAttemptsBeforeEnvironmentWait, privacy: .public)); moved=\(result.movedWindowCount, privacy: .public) aligned=\(result.alreadyAlignedCount, privacy: .public) failures=\(result.recoverableFailureCount, privacy: .public) deferred=\(result.deferredSnapshotCount, privacy: .public)"
+                )
+                return stagnantRestoreAttemptCount >= maxStagnantAttemptsBeforeEnvironmentWait
+            }
             stagnantRestoreAttemptCount = 0
             return false
         }
@@ -312,7 +363,7 @@ public final class SleepWakeCoordinator {
             return false
         }
 
-        guard result.movedWindowCount == 0, result.alreadyAlignedCount > 0 else {
+        guard result.alreadyAlignedCount > 0 else {
             return false
         }
 
@@ -321,6 +372,34 @@ public final class SleepWakeCoordinator {
         }
 
         return result.recoverableFailureCount == result.deferredSnapshotCount
+    }
+
+    private func removingResolvedSnapshots(
+        from pending: [WindowSnapshot],
+        resolved: [WindowSnapshot]
+    ) -> [WindowSnapshot] {
+        guard !pending.isEmpty, !resolved.isEmpty else {
+            return pending
+        }
+
+        var pendingRemovalCountBySnapshot: [WindowSnapshot: Int] = [:]
+        for snapshot in resolved {
+            pendingRemovalCountBySnapshot[snapshot, default: 0] += 1
+        }
+
+        var filtered: [WindowSnapshot] = []
+        filtered.reserveCapacity(pending.count)
+
+        for snapshot in pending {
+            let pendingRemovalCount = pendingRemovalCountBySnapshot[snapshot] ?? 0
+            if pendingRemovalCount > 0 {
+                pendingRemovalCountBySnapshot[snapshot] = pendingRemovalCount - 1
+            } else {
+                filtered.append(snapshot)
+            }
+        }
+
+        return filtered
     }
 
     private func mergedSnapshots(latest: [WindowSnapshot], fallback: [WindowSnapshot])

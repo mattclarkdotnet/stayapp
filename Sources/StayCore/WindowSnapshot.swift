@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 // Design goal: store only the minimal stable window metadata needed for restore.
-public struct CodableRect: Codable, Equatable {
+public struct CodableRect: Codable, Equatable, Hashable, Sendable {
     public var x: Double
     public var y: Double
     public var width: Double
@@ -29,7 +29,7 @@ public struct CodableRect: Codable, Equatable {
     }
 }
 
-public struct WindowSnapshot: Codable, Equatable {
+public struct WindowSnapshot: Codable, Equatable, Hashable, Sendable {
     public var appPID: Int32
     public var appBundleID: String?
     public var appName: String
