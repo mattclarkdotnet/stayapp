@@ -34,6 +34,11 @@ public struct WindowSnapshot: Codable, Equatable, Hashable, Sendable {
     public var appBundleID: String?
     public var appName: String
     public var windowTitle: String?
+    // Window number is the strongest cross-layer identity when available.
+    // It comes from AX ("AXWindowNumber") or WindowServer ("kCGWindowNumber").
+    public var windowNumber: Int?
+    public var windowRole: String?
+    public var windowSubrole: String?
     public var windowIndex: Int
     public var frame: CodableRect
     public var screenDisplayID: UInt32?
@@ -43,6 +48,9 @@ public struct WindowSnapshot: Codable, Equatable, Hashable, Sendable {
         appBundleID: String?,
         appName: String,
         windowTitle: String?,
+        windowNumber: Int? = nil,
+        windowRole: String? = nil,
+        windowSubrole: String? = nil,
         windowIndex: Int,
         frame: CodableRect,
         screenDisplayID: UInt32?
@@ -51,6 +59,9 @@ public struct WindowSnapshot: Codable, Equatable, Hashable, Sendable {
         self.appBundleID = appBundleID
         self.appName = appName
         self.windowTitle = windowTitle
+        self.windowNumber = windowNumber
+        self.windowRole = windowRole
+        self.windowSubrole = windowSubrole
         self.windowIndex = windowIndex
         self.frame = frame
         self.screenDisplayID = screenDisplayID

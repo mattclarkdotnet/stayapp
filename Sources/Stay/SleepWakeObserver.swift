@@ -35,21 +35,21 @@ final class SleepWakeObserver: NSObject {
 
         center.addObserver(
             self,
-            selector: #selector(handleEnvironmentDidChange),
+            selector: #selector(handleScreensDidWake),
             name: NSWorkspace.screensDidWakeNotification,
             object: nil
         )
 
         center.addObserver(
             self,
-            selector: #selector(handleEnvironmentDidChange),
+            selector: #selector(handleSessionDidBecomeActive),
             name: NSWorkspace.sessionDidBecomeActiveNotification,
             object: nil
         )
 
         center.addObserver(
             self,
-            selector: #selector(handleEnvironmentDidChange),
+            selector: #selector(handleActiveSpaceDidChange),
             name: NSWorkspace.activeSpaceDidChangeNotification,
             object: nil
         )
@@ -72,8 +72,20 @@ final class SleepWakeObserver: NSObject {
     }
 
     @objc
-    private func handleEnvironmentDidChange() {
-        logger.info("Observed environment change notification")
-        coordinator.handleEnvironmentDidChange()
+    private func handleScreensDidWake() {
+        logger.info("Observed NSWorkspace.screensDidWakeNotification")
+        coordinator.handleEnvironmentDidChange(.screensDidWake)
+    }
+
+    @objc
+    private func handleSessionDidBecomeActive() {
+        logger.info("Observed NSWorkspace.sessionDidBecomeActiveNotification")
+        coordinator.handleEnvironmentDidChange(.sessionDidBecomeActive)
+    }
+
+    @objc
+    private func handleActiveSpaceDidChange() {
+        logger.info("Observed NSWorkspace.activeSpaceDidChangeNotification")
+        coordinator.handleEnvironmentDidChange(.activeSpaceDidChange)
     }
 }

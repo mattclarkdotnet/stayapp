@@ -326,7 +326,7 @@ struct SleepWakeCoordinatorTests {
         #expect(restore.calls.count == 3)
         #expect(scheduler.pendingCount == 0)
 
-        coordinator.handleEnvironmentDidChange()
+        coordinator.handleEnvironmentDidChange(.activeSpaceDidChange)
         #expect(scheduler.pendingCount == 1)
 
         scheduler.runNext()
@@ -398,7 +398,7 @@ struct SleepWakeCoordinatorTests {
         #expect(scheduler.pendingCount == 0)
     }
 
-    @Test("Deferred-only residuals end wake cycle after stagnation")
+    @Test("Deferred-only residuals park for environment change after stagnation")
     func deferredResidualsConcludeWakeCycle() {
         let snapshots = [sampleSnapshot(title: "FreeCAD", index: 0)]
 
@@ -461,7 +461,10 @@ struct SleepWakeCoordinatorTests {
         #expect(restore.calls.count == 3)
         #expect(scheduler.pendingCount == 0)
 
-        coordinator.handleEnvironmentDidChange()
+        coordinator.handleEnvironmentDidChange(.activeSpaceDidChange)
+        #expect(scheduler.pendingCount == 1)
+        scheduler.runNext()
+        #expect(restore.calls.count == 4)
         #expect(scheduler.pendingCount == 0)
     }
 
@@ -540,7 +543,7 @@ struct SleepWakeCoordinatorTests {
         #expect(scheduler.pendingCount == 0)
     }
 
-    @Test("Repeated moved-but-unchanged deferred residuals converge instead of looping")
+    @Test("Repeated moved deferred residuals park and retry on environment change")
     func repeatedMovedDeferredResidualsConverge() {
         let snapshots = [sampleSnapshot(title: "Finder", index: 0)]
 
@@ -603,11 +606,14 @@ struct SleepWakeCoordinatorTests {
         #expect(restore.calls.count == 3)
         #expect(scheduler.pendingCount == 0)
 
-        coordinator.handleEnvironmentDidChange()
+        coordinator.handleEnvironmentDidChange(.activeSpaceDidChange)
+        #expect(scheduler.pendingCount == 1)
+        scheduler.runNext()
+        #expect(restore.calls.count == 4)
         #expect(scheduler.pendingCount == 0)
     }
 
-    @Test("Moved-count jitter with unchanged residual state converges")
+    @Test("Moved-count jitter with unchanged residual state parks then retries on environment change")
     func movedCountJitterConverges() {
         let snapshots = [sampleSnapshot(title: "Finder", index: 0)]
 
@@ -681,7 +687,10 @@ struct SleepWakeCoordinatorTests {
         #expect(restore.calls.count == 4)
         #expect(scheduler.pendingCount == 0)
 
-        coordinator.handleEnvironmentDidChange()
+        coordinator.handleEnvironmentDidChange(.activeSpaceDidChange)
+        #expect(scheduler.pendingCount == 1)
+        scheduler.runNext()
+        #expect(restore.calls.count == 5)
         #expect(scheduler.pendingCount == 0)
     }
 
@@ -722,6 +731,67 @@ struct SleepWakeCoordinatorTests {
 
         scheduler.runNext()
         #expect(restore.calls.count == 2)
+    }
+
+    @Test("Deferred post-timeout retries wait for active-space changes")
+    func deferredTimeoutRetriesRequireActiveSpaceChange() {
+        let snapshots = [sampleSnapshot(title: "FreeCAD", index: 0)]
+
+        let capture = StubCaptureService()
+        capture.nextSnapshots = snapshots
+
+        let restore = SpyRestoreService()
+        restore.detailedResults = [
+            WindowRestoreResult(
+                isComplete: false,
+                movedWindowCount: 0,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 1,
+                deferredSnapshotCount: 1
+            ),
+            WindowRestoreResult(
+                isComplete: true,
+                movedWindowCount: 1,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 0,
+                deferredSnapshotCount: 0
+            ),
+        ]
+
+        let repository = InMemoryRepository()
+        let scheduler = ManualScheduler()
+        let readiness = SequencedReadinessChecker([true])
+
+        let coordinator = SleepWakeCoordinator(
+            capturing: capture,
+            restoring: restore,
+            repository: repository,
+            readinessChecker: readiness,
+            scheduler: scheduler,
+            wakeDelay: 0,
+            retryInterval: 0.1,
+            maxWaitAfterWake: -1
+        )
+
+        coordinator.handleWillSleep()
+        coordinator.handleDidWake()
+        scheduler.runNext()
+
+        #expect(restore.calls.count == 1)
+        #expect(scheduler.pendingCount == 0)
+
+        coordinator.handleEnvironmentDidChange(.sessionDidBecomeActive)
+        #expect(scheduler.pendingCount == 0)
+
+        coordinator.handleEnvironmentDidChange(.screensDidWake)
+        #expect(scheduler.pendingCount == 0)
+
+        coordinator.handleEnvironmentDidChange(.activeSpaceDidChange)
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 2)
+        #expect(scheduler.pendingCount == 0)
     }
 
     @Test("Post-timeout retries are capped to avoid infinite environment-change loops")

@@ -63,6 +63,10 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                     appBundleID: app.bundleIdentifier,
                     appName: app.localizedName ?? "Unknown",
                     windowTitle: stringValue(of: window, attribute: kAXTitleAttribute as CFString),
+                    windowNumber: windowNumber(of: window),
+                    windowRole: stringValue(of: window, attribute: kAXRoleAttribute as CFString),
+                    windowSubrole: stringValue(
+                        of: window, attribute: kAXSubroleAttribute as CFString),
                     windowIndex: index,
                     frame: CodableRect(frame),
                     screenDisplayID: displayID
@@ -113,6 +117,7 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                         appBundleID: app.bundleIdentifier,
                         appName: app.localizedName ?? "Unknown",
                         windowTitle: fallbackWindow.title,
+                        windowNumber: fallbackWindow.windowNumber,
                         windowIndex: appSnapshots.count,
                         frame: CodableRect(fallbackWindow.frame),
                         screenDisplayID: displayID
@@ -174,6 +179,7 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
 
         // Group by process to avoid cross-app window matching.
         let grouped = groupedSnapshotsByTargetPID(snapshots)
+        let onScreenWindowNumbersByPID = onScreenWindowNumbersByPID()
         // Coordinator treats this as a success signal for ending post-wake retries.
         var movedWindowCount = 0
         var alreadyAlignedCount = 0
@@ -189,43 +195,65 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         var activatedPIDsForWindowExposure = Set<Int32>()
 
         for (appPID, appSnapshots) in grouped {
+            let onScreenWindowNumbers = onScreenWindowNumbersByPID[appPID] ?? []
+            let partitionedSnapshots = partitionSnapshotsByCurrentSpace(
+                appSnapshots,
+                onScreenWindowNumbers: onScreenWindowNumbers
+            )
+            let eligibleSnapshots = partitionedSnapshots.eligible
+            let inactiveSpaceDeferredSnapshots = partitionedSnapshots.deferred
+
+            if !inactiveSpaceDeferredSnapshots.isEmpty {
+                recoverableFailureCount += inactiveSpaceDeferredSnapshots.count
+                deferredSnapshotCount += inactiveSpaceDeferredSnapshots.count
+                logger.debug(
+                    "Deferring \(inactiveSpaceDeferredSnapshots.count, privacy: .public) snapshot(s) for pid=\(appPID, privacy: .public) because windows are not in the active space (onScreenWindowNumbers=\(onScreenWindowNumbers.count, privacy: .public))"
+                )
+            }
+
+            guard !eligibleSnapshots.isEmpty else {
+                continue
+            }
+
             let appElement = AXUIElementCreateApplication(appPID)
             var windows = windowsForAppElement(appElement)
-            let requiresFullExposure = appSnapshots.count > 1 && windows.count < appSnapshots.count
-            if windows.isEmpty || requiresFullExposure,
-                isAppRunning(pid: appPID),
-                appPID != originalFrontmostPID,
+
+            if shouldAttemptActivationForWindowExposure(
+                appPID: appPID,
+                snapshots: eligibleSnapshots,
+                windows: windows,
+                originalFrontmostPID: originalFrontmostPID
+            ),
                 activateAppForWindowExposure(pid: appPID)
             {
                 activatedPIDsForWindowExposure.insert(appPID)
                 logger.debug(
                     "Activated app pid=\(appPID, privacy: .public) to expose AX windows for restore"
                 )
-                let minimumExpectedWindowCount =
-                    requiresFullExposure
-                    ? appSnapshots.count
-                    : max(1, windows.count)
                 windows = waitForWindowExposure(
                     appElement: appElement,
-                    minimumCount: minimumExpectedWindowCount
+                    minimumCount: 1
                 )
             }
 
-            if appSnapshots.count > 1, windows.count < appSnapshots.count {
-                recoverableFailureCount += appSnapshots.count
-                deferredSnapshotCount += appSnapshots.count
+            let requiresFullExposure =
+                shouldRequireFullExposure(for: eligibleSnapshots)
+                && windows.count < eligibleSnapshots.count
+            if requiresFullExposure {
+                recoverableFailureCount += eligibleSnapshots.count
+                deferredSnapshotCount += eligibleSnapshots.count
                 logger.warning(
-                    "App pid=\(appPID, privacy: .public) exposed \(windows.count, privacy: .public)/\(appSnapshots.count, privacy: .public) expected windows; deferring app restore"
+                    "App pid=\(appPID, privacy: .public) exposed \(windows.count, privacy: .public)/\(eligibleSnapshots.count, privacy: .public) window(s) for an ambiguous multi-window restore set; deferring app restore"
                 )
                 continue
             }
 
             guard !windows.isEmpty else {
                 if isAppRunning(pid: appPID) {
-                    recoverableFailureCount += appSnapshots.count
-                    deferredSnapshotCount += appSnapshots.count
+                    recoverableFailureCount += eligibleSnapshots.count
+                    deferredSnapshotCount += eligibleSnapshots.count
                     logger.warning(
-                        "App pid=\(appPID, privacy: .public) is running but has no AX windows yet; deferring \(appSnapshots.count, privacy: .public) snapshot(s)"
+                        "App pid=\(appPID, privacy: .public) is running but has no AX windows yet; deferring \(eligibleSnapshots.count, privacy: .public) eligible snapshot(s)"
                     )
                 }
                 logger.debug(
@@ -235,17 +263,20 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
             }
 
             logger.debug(
-                "Restore app pid=\(appPID, privacy: .public) snapshots=\(appSnapshots.count, privacy: .public) liveWindows=\(windows.count, privacy: .public)"
+                "Restore app pid=\(appPID, privacy: .public) snapshots=\(eligibleSnapshots.count, privacy: .public) liveWindows=\(windows.count, privacy: .public) deferredInactiveSpace=\(inactiveSpaceDeferredSnapshots.count, privacy: .public)"
             )
             let candidates = windows.map { window in
                 WindowCandidate(
                     title: stringValue(of: window, attribute: kAXTitleAttribute as CFString),
-                    frame: frameForWindow(window)
+                    frame: frameForWindow(window),
+                    windowNumber: windowNumber(of: window),
+                    role: stringValue(of: window, attribute: kAXRoleAttribute as CFString),
+                    subrole: stringValue(of: window, attribute: kAXSubroleAttribute as CFString)
                 )
             }
             var unusedIndices = Set(windows.indices)
 
-            for snapshot in appSnapshots.sorted(by: { $0.windowIndex < $1.windowIndex }) {
+            for snapshot in eligibleSnapshots.sorted(by: { $0.windowIndex < $1.windowIndex }) {
                 guard
                     let windowIndex = bestMatchingIndex(
                         for: snapshot,
@@ -450,6 +481,18 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         return value as? String
     }
 
+    private func windowNumber(of element: AXUIElement) -> Int? {
+        let attribute = "AXWindowNumber" as CFString
+        guard
+            let value = copyAttributeValue(
+                element: element, attribute: attribute)
+        else {
+            return nil
+        }
+
+        return (value as? NSNumber)?.intValue
+    }
+
     private func copyAttributeValue(element: AXUIElement, attribute: CFString) -> CFTypeRef? {
         var value: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(element, attribute, &value)
@@ -488,6 +531,26 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         candidates: [WindowCandidate],
         unusedIndices: Set<Int>
     ) -> Int? {
+        if let snapshotWindowNumber = snapshot.windowNumber {
+            for index in unusedIndices.sorted() {
+                if candidates[index].windowNumber == snapshotWindowNumber {
+                    return index
+                }
+            }
+        }
+
+        if let snapshotRole = normalizedString(snapshot.windowRole),
+            let snapshotSubrole = normalizedString(snapshot.windowSubrole)
+        {
+            for index in unusedIndices.sorted() {
+                if normalizedString(candidates[index].role) == snapshotRole,
+                    normalizedString(candidates[index].subrole) == snapshotSubrole
+                {
+                    return index
+                }
+            }
+        }
+
         if let snapshotTitle = snapshot.windowTitle?.trimmingCharacters(
             in: .whitespacesAndNewlines), !snapshotTitle.isEmpty
         {
@@ -517,6 +580,14 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         }
 
         return unusedIndices.sorted().first
+    }
+
+    private func normalizedString(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty
+        else {
+            return nil
+        }
+        return value.lowercased()
     }
 
     private func bestFrameMatchIndex(
@@ -562,6 +633,125 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
 
     private func isAppRunning(pid: Int32) -> Bool {
         workspace.runningApplications.contains { $0.processIdentifier == pid && !$0.isTerminated }
+    }
+
+    private func onScreenWindowNumbersByPID() -> [Int32: Set<Int>] {
+        let onScreenWindows = windowServerWindowsByPID(options: [.optionOnScreenOnly])
+        var result: [Int32: Set<Int>] = [:]
+
+        for (pid, windows) in onScreenWindows {
+            let numbers = Set(windows.compactMap(\.windowNumber))
+            if !numbers.isEmpty {
+                result[pid] = numbers
+            }
+        }
+
+        return result
+    }
+
+    private func partitionSnapshotsByCurrentSpace(
+        _ snapshots: [WindowSnapshot],
+        onScreenWindowNumbers: Set<Int>
+    ) -> (eligible: [WindowSnapshot], deferred: [WindowSnapshot]) {
+        guard !snapshots.isEmpty else {
+            return ([], [])
+        }
+
+        // If we have enough identity to reason about active-space visibility,
+        // only attempt windows currently visible in the active space.
+        let snapshotsWithWindowNumbers = snapshots.compactMap(\.windowNumber)
+        guard !snapshotsWithWindowNumbers.isEmpty else {
+            return (snapshots, [])
+        }
+
+        if onScreenWindowNumbers.isEmpty {
+            // The app currently has no visible WindowServer windows in this
+            // space/session, so restoring these snapshots now is likely wrong.
+            return ([], snapshots)
+        }
+
+        var eligible: [WindowSnapshot] = []
+        var deferred: [WindowSnapshot] = []
+        eligible.reserveCapacity(snapshots.count)
+        deferred.reserveCapacity(snapshots.count)
+
+        for snapshot in snapshots {
+            if let snapshotWindowNumber = snapshot.windowNumber {
+                if onScreenWindowNumbers.contains(snapshotWindowNumber) {
+                    eligible.append(snapshot)
+                } else {
+                    deferred.append(snapshot)
+                }
+                continue
+            }
+
+            // Mixed-identity snapshot sets are risky for multi-window apps.
+            // If we cannot prove active-space visibility for this snapshot,
+            // defer and wait for the app/space to expose it.
+            if snapshots.count > 1 {
+                deferred.append(snapshot)
+            } else {
+                eligible.append(snapshot)
+            }
+        }
+
+        return (eligible, deferred)
+    }
+
+    private func shouldAttemptActivationForWindowExposure(
+        appPID: Int32,
+        snapshots: [WindowSnapshot],
+        windows: [AXUIElement],
+        originalFrontmostPID: Int32?
+    ) -> Bool {
+        guard windows.isEmpty else {
+            return false
+        }
+
+        guard isAppRunning(pid: appPID) else {
+            return false
+        }
+
+        guard appPID != originalFrontmostPID else {
+            return false
+        }
+
+        // Phase 2 activation policy: avoid activating multi-window apps during
+        // wake restore. Activation can drag windows/spaces visibly and cause
+        // repeated flashing loops.
+        guard snapshots.count == 1 else {
+            return false
+        }
+
+        // If we already have a concrete window number, prefer waiting for a
+        // space/session environment change instead of force-activating.
+        if snapshots[0].windowNumber != nil {
+            return false
+        }
+
+        return true
+    }
+
+    private func shouldRequireFullExposure(for snapshots: [WindowSnapshot]) -> Bool {
+        guard snapshots.count > 1 else {
+            return false
+        }
+
+        // If we have window numbers, we can match partial visibility safely.
+        let hasWindowNumbers = snapshots.contains(where: { $0.windowNumber != nil })
+        if hasWindowNumbers {
+            return false
+        }
+
+        // Without titles or window numbers, partial app visibility is too
+        // ambiguous for reliable matching.
+        return snapshots.allSatisfy { snapshot in
+            let normalizedTitle =
+                snapshot.windowTitle?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased() ?? ""
+            return normalizedTitle.isEmpty
+        }
     }
 
     private func groupedSnapshotsByTargetPID(_ snapshots: [WindowSnapshot]) -> [Int32:
@@ -701,6 +891,8 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
             }
             let ownerPID = ownerPIDNumber.int32Value
 
+            let windowNumber = (info[kCGWindowNumber as String] as? NSNumber)?.intValue
+
             guard let layerNumber = info[kCGWindowLayer as String] as? NSNumber else {
                 continue
             }
@@ -737,7 +929,12 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
 
             let title = info[kCGWindowName as String] as? String
             byPID[ownerPID, default: []].append(
-                WindowServerWindow(title: title, frame: frame, layer: layer)
+                WindowServerWindow(
+                    title: title,
+                    frame: frame,
+                    layer: layer,
+                    windowNumber: windowNumber
+                )
             )
         }
 
@@ -908,8 +1105,12 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         let title: String?
         let frame: CGRect
         let layer: Int
+        let windowNumber: Int?
 
         var identityKey: String {
+            if let windowNumber {
+                return "\(windowNumber)"
+            }
             let base = AXWindowSnapshotService.windowIdentityKey(title: title, frame: frame)
             return "\(layer)|\(base)"
         }
@@ -918,5 +1119,8 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
     private struct WindowCandidate {
         let title: String?
         let frame: CGRect?
+        let windowNumber: Int?
+        let role: String?
+        let subrole: String?
     }
 }

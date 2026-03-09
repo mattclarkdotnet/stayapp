@@ -93,6 +93,8 @@ Add/expand tests for:
 - timeout reached before readiness
 - environment-change retrigger after timeout
 - stale snapshot identity (PID drift, bundle/name fallback behavior)
+- deferred-only residuals parking until active-space/environment change
+- untitled multi-window matching using enriched identity (`windowNumber`, role/subrole)
 
 ## When a Bug Is Found
 

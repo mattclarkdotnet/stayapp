@@ -119,7 +119,7 @@ Each fixture should include expected capture output and expected restore result
 - No stale persisted window may block restoring fresh captured windows for the same app.
 - Available windows must still restore when some app windows are deferred.
 - Re-running restore on an already-restored layout must be a no-op (no extra moves).
-- Deferred-only residuals must converge without creating visible retry loops.
+- Deferred-only residuals must park without interval loops and retry on environment change.
 - Matching must remain stable when titles are missing (untitled windows).
 
 ### Delivery order

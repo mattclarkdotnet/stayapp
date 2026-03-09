@@ -33,7 +33,7 @@ Make wake restore deterministic for currently accessible windows by reducing glo
 - Verify retries receive only unresolved snapshots.
 - Verify cycles end once all pending snapshots are resolved.
 
-## Phase 2 (later, explicitly deferred)
+## Phase 2 (current change set)
 
 1. Space-aware restore strategy:
 - Avoid touching windows that are not currently restorable in the active space.
@@ -44,6 +44,19 @@ Make wake restore deterministic for currently accessible windows by reducing glo
 
 3. Snapshot schema enrichment:
 - Add stronger window identity metadata for difficult multi-window apps.
+
+## Phase 2 Status
+
+- Implemented:
+  - Snapshot identity enrichment (`windowNumber`, role/subrole metadata).
+  - Active-space partitioning during restore using on-screen WindowServer window numbers.
+  - Deferred-space coordinator mode: deferred snapshots park and retry on
+    `activeSpaceDidChange` instead of terminating or interval-looping.
+  - Activation policy tightened: avoid force-activating multi-window apps during wake restore.
+  - Timeout-cap behavior refined: if deferred snapshots remain, keep pending state for later
+    active-space retries instead of clearing restore state early.
+- Deferred:
+  - Per-app exceptions for apps that do not expose stable window numbers (for example, KiCad).
 
 ## Success Criteria
 

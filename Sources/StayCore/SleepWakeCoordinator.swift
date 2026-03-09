@@ -1,6 +1,13 @@
 import Foundation
 import OSLog
 
+public enum EnvironmentChangeKind: String, Sendable {
+    case unspecified
+    case screensDidWake
+    case sessionDidBecomeActive
+    case activeSpaceDidChange
+}
+
 // Design goal: deterministic, resilient sleep/wake handling that tolerates
 // repeated or out-of-order events and delays restore until conditions are safe.
 public final class SleepWakeCoordinator {
@@ -29,6 +36,8 @@ public final class SleepWakeCoordinator {
     private var postTimeoutRetryCount = 0
     private var hasObservedPlacementProgress = false
     private var lastIncompleteRestoreResult: WindowRestoreResult?
+    private var isWaitingForDeferredSpaceExposure = false
+    private var requiresActiveSpaceChangeForDeferredRestore = false
 
     public init(
         capturing: WindowSnapshotCapturing,
@@ -80,6 +89,8 @@ public final class SleepWakeCoordinator {
         postTimeoutRetryCount = 0
         hasObservedPlacementProgress = false
         lastIncompleteRestoreResult = nil
+        isWaitingForDeferredSpaceExposure = false
+        requiresActiveSpaceChangeForDeferredRestore = false
         if !snapshots.isEmpty {
             cachedSnapshots = snapshots
         }
@@ -115,6 +126,8 @@ public final class SleepWakeCoordinator {
             isAwaitingPostWakeRestore = false
             pendingRestoreSnapshots = []
             restoreDeadline = nil
+            isWaitingForDeferredSpaceExposure = false
+            requiresActiveSpaceChangeForDeferredRestore = false
             lock.unlock()
             return
         }
@@ -127,6 +140,8 @@ public final class SleepWakeCoordinator {
         postTimeoutRetryCount = 0
         hasObservedPlacementProgress = false
         lastIncompleteRestoreResult = nil
+        isWaitingForDeferredSpaceExposure = false
+        requiresActiveSpaceChangeForDeferredRestore = false
         if let restoreDeadline {
             logger.info(
                 "Wake cycle started; awaiting restore for \(snapshots.count, privacy: .public) snapshot(s) with deadline \(restoreDeadline.ISO8601Format(), privacy: .public)"
@@ -136,16 +151,29 @@ public final class SleepWakeCoordinator {
         lock.unlock()
     }
 
-    public func handleEnvironmentDidChange() {
+    public func handleEnvironmentDidChange(_ kind: EnvironmentChangeKind = .unspecified) {
         lock.lock()
         guard !isSleeping, isAwaitingPostWakeRestore else {
             lock.unlock()
             return
         }
 
+        if isWaitingForDeferredSpaceExposure,
+            requiresActiveSpaceChangeForDeferredRestore,
+            kind != .activeSpaceDidChange
+        {
+            logger.debug(
+                "Ignoring environment change (\(kind.rawValue, privacy: .public)) while waiting specifically for active-space change"
+            )
+            lock.unlock()
+            return
+        }
+
         // Environment signals (screens/session/workspace) are strong indicators
         // that windows are now accessible after wake or unlock.
-        logger.debug("Environment change signal received; scheduling immediate restore attempt")
+        logger.debug(
+            "Environment change signal received (\(kind.rawValue, privacy: .public)); scheduling immediate restore attempt"
+        )
         scheduleRestoreAttempt(after: 0.25)
         lock.unlock()
     }
@@ -166,20 +194,33 @@ public final class SleepWakeCoordinator {
         }
 
         let snapshots = pendingRestoreSnapshots
-        let deadline = restoreDeadline ?? Date()
+        let timedOut: Bool
+        if isWaitingForDeferredSpaceExposure {
+            timedOut = false
+        } else if let restoreDeadline {
+            timedOut = Date() >= restoreDeadline
+        } else {
+            timedOut = true
+        }
 
         // Keep retrying until displays are ready; timeout prevents indefinite waiting.
-        let timedOut = Date() >= deadline
         let ready = readinessChecker.isReady(toRestore: snapshots)
         logger.debug(
-            "Restore attempt check: ready=\(ready, privacy: .public) timedOut=\(timedOut, privacy: .public) snapshots=\(snapshots.count, privacy: .public)"
+            "Restore attempt check: ready=\(ready, privacy: .public) timedOut=\(timedOut, privacy: .public) deferredSpaceWait=\(self.isWaitingForDeferredSpaceExposure, privacy: .public) snapshots=\(snapshots.count, privacy: .public)"
         )
 
         if !ready && !timedOut {
-            logger.debug(
-                "Displays not ready; retrying in \(self.retryInterval, privacy: .public)s"
-            )
-            scheduleRestoreAttempt(after: retryInterval)
+            if isWaitingForDeferredSpaceExposure {
+                logger.debug(
+                    "Displays not ready while waiting for deferred-space windows; parking until next environment change"
+                )
+                restoreTask = nil
+            } else {
+                logger.debug(
+                    "Displays not ready; retrying in \(self.retryInterval, privacy: .public)s"
+                )
+                scheduleRestoreAttempt(after: retryInterval)
+            }
             lock.unlock()
             return
         }
@@ -208,6 +249,14 @@ public final class SleepWakeCoordinator {
             hasObservedPlacementProgress = true
         }
 
+        if isWaitingForDeferredSpaceExposure,
+            restoreResult.recoverableFailureCount != restoreResult.deferredSnapshotCount
+        {
+            logger.debug("Exiting deferred-space wait mode due to non-deferred residual failures")
+            isWaitingForDeferredSpaceExposure = false
+            requiresActiveSpaceChangeForDeferredRestore = false
+        }
+
         if !restoreResult.resolvedSnapshots.isEmpty {
             let priorPendingCount = pendingRestoreSnapshots.count
             pendingRestoreSnapshots = removingResolvedSnapshots(
@@ -226,7 +275,40 @@ public final class SleepWakeCoordinator {
             }
         }
 
+        if isWaitingForDeferredSpaceExposure,
+            shouldWaitForEnvironmentForDeferredResiduals(restoreResult)
+        {
+            enterDeferredEnvironmentWait(
+                requiresActiveSpaceChange: requiresActiveSpaceChangeForDeferredRestore)
+            lock.unlock()
+            return
+        }
+
         if timedOut {
+            let madeObservableProgress =
+                !restoreResult.resolvedSnapshots.isEmpty
+                || restoreResult.movedWindowCount > 0
+                || restoreResult.alreadyAlignedCount > 0
+
+            if shouldWaitForEnvironmentForDeferredResiduals(restoreResult)
+                || restoreResult.deferredSnapshotCount > 0
+            {
+                enterDeferredEnvironmentWait(requiresActiveSpaceChange: true)
+                lock.unlock()
+                return
+            }
+
+            if madeObservableProgress {
+                postTimeoutRetryCount = 0
+                logger.warning(
+                    "Restore made progress after timeout; waiting for environment change before retry"
+                )
+                restoreTask = nil
+                restoreDeadline = nil
+                lock.unlock()
+                return
+            }
+
             postTimeoutRetryCount += 1
             if postTimeoutRetryCount >= maxPostTimeoutEnvironmentRetries {
                 logger.warning(
@@ -249,11 +331,8 @@ public final class SleepWakeCoordinator {
         }
 
         if noteStagnationAndShouldWaitForEnvironment(restoreResult) {
-            if shouldConcludeWithDeferredResiduals(restoreResult) {
-                logger.info(
-                    "Restore converged with deferred-only residual windows; ending wake restore cycle"
-                )
-                clearRestoreState()
+            if shouldWaitForEnvironmentForDeferredResiduals(restoreResult) {
+                enterDeferredEnvironmentWait(requiresActiveSpaceChange: true)
                 lock.unlock()
                 return
             }
@@ -288,6 +367,8 @@ public final class SleepWakeCoordinator {
         postTimeoutRetryCount = 0
         hasObservedPlacementProgress = false
         lastIncompleteRestoreResult = nil
+        isWaitingForDeferredSpaceExposure = false
+        requiresActiveSpaceChangeForDeferredRestore = false
     }
 
     private func noteStagnationAndShouldWaitForEnvironment(_ result: WindowRestoreResult) -> Bool {
@@ -358,12 +439,10 @@ public final class SleepWakeCoordinator {
         return stagnantRestoreAttemptCount >= maxStagnantAttemptsBeforeEnvironmentWait
     }
 
-    private func shouldConcludeWithDeferredResiduals(_ result: WindowRestoreResult) -> Bool {
+    private func shouldWaitForEnvironmentForDeferredResiduals(_ result: WindowRestoreResult)
+        -> Bool
+    {
         guard hasObservedPlacementProgress else {
-            return false
-        }
-
-        guard result.alreadyAlignedCount > 0 else {
             return false
         }
 
@@ -372,6 +451,24 @@ public final class SleepWakeCoordinator {
         }
 
         return result.recoverableFailureCount == result.deferredSnapshotCount
+    }
+
+    private func enterDeferredEnvironmentWait(requiresActiveSpaceChange: Bool) {
+        if !isWaitingForDeferredSpaceExposure {
+            logger.info(
+                "Restore has deferred-only residual windows; waiting for environment change (for example, active space switch)"
+            )
+        } else {
+            logger.debug("Still waiting for deferred-space windows; no interval retry scheduled")
+        }
+
+        isWaitingForDeferredSpaceExposure = true
+        requiresActiveSpaceChangeForDeferredRestore = requiresActiveSpaceChange
+        restoreTask = nil
+        restoreDeadline = nil
+        stagnantRestoreAttemptCount = 0
+        postTimeoutRetryCount = 0
+        lastIncompleteRestoreResult = nil
     }
 
     private func removingResolvedSnapshots(
