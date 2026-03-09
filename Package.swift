@@ -20,6 +20,10 @@ let package = Package(
         .testTarget(
             name: "StayCoreTests",
             dependencies: ["StayCore"]
+        ),
+        .testTarget(
+            name: "StayIntegrationTests",
+            dependencies: ["StayCore"]
         )
     ]
 )
