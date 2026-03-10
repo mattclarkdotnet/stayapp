@@ -56,9 +56,13 @@ swift run WakeCycleScenarios verify app --check-only
 ## Real-App Scenario Prerequisites
 
 - Exactly two external displays must be active (no built-in display).
+- In scenario tests, `screen 1` means the primary macOS display (menu bar display).
 - Accessibility permission for Stay/test process must be granted.
 - Finder, TextEdit, and FreeCAD must be launchable.
 - FreeCAD child windows used in Scenario 1.3 must be visible as independent AX windows.
+- Scenario 1.3 explicitly repositions FreeCAD windows before capture:
+  main window on screen 1, child windows (`tasks`, `model`, `report view`, `python console`) on screen 2.
+- Scenario 1.3 uses position-only moves for FreeCAD windows so tool-window sizes are preserved.
 - Running these tests will visibly move windows across screens.
 - For wake-cycle scenarios, run `prepare`, let the machine sleep/wake, log in, then run `verify`.
 - `verify` perturbs one tracked window first, then restores and validates display and frame placement.

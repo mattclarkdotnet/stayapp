@@ -12,6 +12,26 @@ import Testing
 struct RealAppScenarioTests {
     private let freeCADBundleIDs = ["org.freecad.FreeCAD", "org.freecadweb.FreeCAD"]
 
+    private enum FreeCADChildPanel: String, CaseIterable {
+        case tasks = "tasks"
+        case model = "model"
+        case reportView = "report view"
+        case pythonConsole = "python console"
+
+        var matchKeywords: [String] {
+            switch self {
+            case .tasks:
+                return ["tasks", "task"]
+            case .model:
+                return ["model", "tree"]
+            case .reportView:
+                return ["report view", "report"]
+            case .pythonConsole:
+                return ["python console", "python"]
+            }
+        }
+    }
+
     @Test("Scenario 1: two Finder windows restore to original screens")
     func finderTwoWindowScenario() {
         runTwoWindowScenario(
@@ -221,22 +241,26 @@ struct RealAppScenarioTests {
 
         guard
             let tracked = selectFreeCADScenarioWindows(pid: appPID),
-            tracked.children.count == 4
+            tracked.children.count == FreeCADChildPanel.allCases.count
         else {
             #expect(Bool(false))
             return
         }
 
         let mainWindow = tracked.main.element
-        let childWindows = tracked.children.map(\.element)
+        let childWindows = tracked.children.map(\.window.element)
         let trackedElements = [mainWindow] + childWindows
 
-        let mainPlaced = setWindowFrame(
-            element: mainWindow, frame: scenarioFrame(on: screenOne, offset: 0))
+        let mainPlaced = moveMainWindowToScreen(
+            element: mainWindow,
+            screen: screenOne,
+            offset: 0
+        )
         #expect(mainPlaced)
-        let childrenPlaced = childWindows.enumerated().allSatisfy { index, window in
-            setWindowFrame(element: window, frame: childScenarioFrame(on: screenTwo, index: index))
-        }
+        let childrenPlaced = moveChildWindowsToScreen(
+            elements: childWindows,
+            screen: screenTwo
+        )
         #expect(childrenPlaced)
         guard mainPlaced, childrenPlaced else {
             return
@@ -277,12 +301,16 @@ struct RealAppScenarioTests {
             return
         }
 
-        let movedMain = setWindowFrame(
-            element: mainWindow, frame: scenarioFrame(on: screenTwo, offset: 1))
+        let movedMain = moveMainWindowToScreen(
+            element: mainWindow,
+            screen: screenTwo,
+            offset: 1
+        )
         #expect(movedMain)
-        let movedChildren = childWindows.enumerated().allSatisfy { index, window in
-            setWindowFrame(element: window, frame: childScenarioFrame(on: screenOne, index: index))
-        }
+        let movedChildren = moveChildWindowsToScreen(
+            elements: childWindows,
+            screen: screenOne
+        )
         #expect(movedChildren)
         guard movedMain, movedChildren else {
             return
@@ -338,15 +366,88 @@ struct RealAppScenarioTests {
         return CGRect(x: x, y: y, width: width, height: height)
     }
 
-    private func childScenarioFrame(on screen: NSScreen, index: Int) -> CGRect {
+    @discardableResult
+    private func moveMainWindowToScreen(element: AXUIElement, screen: NSScreen, offset: Int) -> Bool
+    {
+        guard let frame = frameForWindow(element) else {
+            return false
+        }
+
         let visible = screen.visibleFrame
-        let width = min(max(320, visible.width * 0.34), visible.width - 80)
-        let height = min(max(220, visible.height * 0.24), visible.height - 80)
-        let x = visible.maxX - width - 40
-        let yStep = height + 18
-        let maxY = visible.maxY - height - 40
-        let y = min(visible.minY + 40 + (CGFloat(index) * yStep), maxY)
-        return CGRect(x: x, y: y, width: width, height: height)
+        let preferred = CGPoint(
+            x: visible.minX + 40 + (CGFloat(offset) * 35),
+            y: visible.minY + 60 + (CGFloat(offset) * 30)
+        )
+        let origin = clampedOrigin(for: frame, preferred: preferred, in: visible)
+        return setWindowOrigin(element: element, origin: origin)
+    }
+
+    @discardableResult
+    private func moveChildWindowsToScreen(elements: [AXUIElement], screen: NSScreen) -> Bool {
+        guard !elements.isEmpty else {
+            return true
+        }
+
+        let windows = elements.compactMap { element -> (element: AXUIElement, frame: CGRect)? in
+            guard let frame = frameForWindow(element) else {
+                return nil
+            }
+            return (element: element, frame: frame)
+        }
+        guard windows.count == elements.count else {
+            return false
+        }
+
+        var group = windows[0].frame
+        for window in windows.dropFirst() {
+            group = group.union(window.frame)
+        }
+
+        let visible = screen.visibleFrame
+        let preferredGroupOrigin = CGPoint(
+            x: visible.maxX - group.width - 40,
+            y: visible.minY + 40
+        )
+        let targetGroupOrigin = clampedRectOrigin(
+            size: group.size,
+            preferred: preferredGroupOrigin,
+            in: visible
+        )
+        let delta = CGPoint(
+            x: targetGroupOrigin.x - group.minX,
+            y: targetGroupOrigin.y - group.minY
+        )
+
+        return windows.allSatisfy { window in
+            let targetOrigin = CGPoint(
+                x: window.frame.minX + delta.x,
+                y: window.frame.minY + delta.y
+            )
+            return setWindowOrigin(element: window.element, origin: targetOrigin)
+        }
+    }
+
+    private func clampedOrigin(for frame: CGRect, preferred: CGPoint, in bounds: CGRect) -> CGPoint
+    {
+        let minX = bounds.minX
+        let minY = bounds.minY
+        let maxX = max(bounds.maxX - frame.width, minX)
+        let maxY = max(bounds.maxY - frame.height, minY)
+
+        let x = min(max(preferred.x, minX), maxX)
+        let y = min(max(preferred.y, minY), maxY)
+        return CGPoint(x: x, y: y)
+    }
+
+    private func clampedRectOrigin(size: CGSize, preferred: CGPoint, in bounds: CGRect) -> CGPoint {
+        let minX = bounds.minX
+        let minY = bounds.minY
+        let maxX = max(bounds.maxX - size.width, minX)
+        let maxY = max(bounds.maxY - size.height, minY)
+
+        let x = min(max(preferred.x, minX), maxX)
+        let y = min(max(preferred.y, minY), maxY)
+        return CGPoint(x: x, y: y)
     }
 
     private func validatedTwoExternalDisplays() -> [(screen: NSScreen, id: UInt32)]? {
@@ -374,7 +475,17 @@ struct RealAppScenarioTests {
             return nil
         }
 
-        return [(screens[0], displayOneID), (screens[1], displayTwoID)]
+        let indexedDisplays: [(screen: NSScreen, id: UInt32)] = [
+            (screens[0], displayOneID),
+            (screens[1], displayTwoID),
+        ]
+        guard let primaryIndex = indexedDisplays.firstIndex(where: { CGDisplayIsMain($0.id) != 0 })
+        else {
+            #expect(Bool(false))
+            return nil
+        }
+        let secondaryIndex = primaryIndex == 0 ? 1 : 0
+        return [indexedDisplays[primaryIndex], indexedDisplays[secondaryIndex]]
     }
 
     private func activateFirstAvailableApp(bundleIDs: [String]) -> (bundleID: String, pid: Int32)? {
@@ -398,58 +509,99 @@ struct RealAppScenarioTests {
     }
 
     private func selectFreeCADScenarioWindows(pid: Int32) -> (
-        main: LiveWindow, children: [LiveWindow]
+        main: LiveWindow, children: [(panel: FreeCADChildPanel, window: LiveWindow)]
     )? {
         let settable = liveSettableWindows(pid: pid)
         guard settable.count >= 5 else {
             return nil
         }
+        var remaining = settable
+        var selectedChildren: [(panel: FreeCADChildPanel, window: LiveWindow)] = []
+        selectedChildren.reserveCapacity(FreeCADChildPanel.allCases.count)
 
-        let mainWindow = settable.max(by: { windowArea($0.frame) < windowArea($1.frame) })
+        for panel in FreeCADChildPanel.allCases {
+            guard let bestWindow = bestFreeCADChildWindow(for: panel, in: remaining) else {
+                return nil
+            }
+            selectedChildren.append((panel: panel, window: bestWindow))
+            remaining.removeAll(where: { candidate in
+                CFEqual(candidate.element, bestWindow.element)
+            })
+        }
+
+        let mainWindow = chooseFreeCADMainWindow(from: remaining)
         guard let mainWindow else {
             return nil
         }
 
-        let childCandidates = settable.filter { !CFEqual($0.element, mainWindow.element) }
-        let rankedChildren = childCandidates.sorted { lhs, rhs in
-            let lhsScore = freeCADChildWindowScore(lhs)
-            let rhsScore = freeCADChildWindowScore(rhs)
-            if lhsScore != rhsScore {
-                return lhsScore > rhsScore
+        return (main: mainWindow, children: selectedChildren)
+    }
+
+    private func chooseFreeCADMainWindow(from windows: [LiveWindow]) -> LiveWindow? {
+        guard !windows.isEmpty else {
+            return nil
+        }
+
+        let titledMainCandidates = windows.filter { window in
+            guard let title = window.title?.lowercased() else {
+                return false
+            }
+            return title.contains("freecad")
+        }
+        let pool = titledMainCandidates.isEmpty ? windows : titledMainCandidates
+        return pool.max(by: { windowArea($0.frame) < windowArea($1.frame) })
+    }
+
+    private func bestFreeCADChildWindow(for panel: FreeCADChildPanel, in windows: [LiveWindow])
+        -> LiveWindow?
+    {
+        let ranked = windows.compactMap { window -> (window: LiveWindow, score: Int)? in
+            let score = freeCADChildWindowScore(window: window, panel: panel)
+            guard score > 0 else {
+                return nil
+            }
+            return (window: window, score: score)
+        }.sorted { lhs, rhs in
+            if lhs.score != rhs.score {
+                return lhs.score > rhs.score
             }
 
-            let lhsArea = windowArea(lhs.frame)
-            let rhsArea = windowArea(rhs.frame)
+            let lhsArea = windowArea(lhs.window.frame)
+            let rhsArea = windowArea(rhs.window.frame)
             if lhsArea != rhsArea {
                 return lhsArea > rhsArea
             }
 
-            if lhs.number != rhs.number {
-                return (lhs.number ?? Int.max) < (rhs.number ?? Int.max)
+            if lhs.window.number != rhs.window.number {
+                return (lhs.window.number ?? Int.max) < (rhs.window.number ?? Int.max)
             }
 
-            if lhs.frame.minX != rhs.frame.minX {
-                return lhs.frame.minX < rhs.frame.minX
+            if lhs.window.frame.minX != rhs.window.frame.minX {
+                return lhs.window.frame.minX < rhs.window.frame.minX
             }
-            return lhs.frame.minY < rhs.frame.minY
+            return lhs.window.frame.minY < rhs.window.frame.minY
         }
 
-        guard rankedChildren.count >= 4 else {
-            return nil
-        }
-        return (main: mainWindow, children: Array(rankedChildren.prefix(4)))
+        return ranked.first?.window
     }
 
-    private func freeCADChildWindowScore(_ window: LiveWindow) -> Int {
-        guard let title = window.title?.lowercased() else {
+    private func freeCADChildWindowScore(window: LiveWindow, panel: FreeCADChildPanel) -> Int {
+        guard
+            let title = window.title?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        else {
             return 0
         }
-        let keywords = ["task", "model", "report", "python", "console", "tree", "property"]
-        return keywords.reduce(into: 0) { score, keyword in
+
+        var score = 0
+        if title == panel.rawValue {
+            score += 6
+        }
+        for keyword in panel.matchKeywords {
             if title.contains(keyword) {
-                score += 1
+                score += 2
             }
         }
+        return score
     }
 
     private func windowArea(_ frame: CGRect) -> CGFloat {
@@ -633,6 +785,35 @@ struct RealAppScenarioTests {
         }
 
         return positionResult == .success
+    }
+
+    @discardableResult
+    private func setWindowOrigin(element window: AXUIElement, origin: CGPoint) -> Bool {
+        var mutableOrigin = origin
+        guard let positionValue = AXValueCreate(.cgPoint, &mutableOrigin) else {
+            return false
+        }
+
+        let positionResult = AXUIElementSetAttributeValue(
+            window, kAXPositionAttribute as CFString, positionValue
+        )
+        if positionResult == .success {
+            return true
+        }
+
+        guard var currentFrame = frameForWindow(window) else {
+            return false
+        }
+        currentFrame.origin = origin
+        if let frameValue = AXValueCreate(.cgRect, &currentFrame) {
+            let frameResult = AXUIElementSetAttributeValue(
+                window, "AXFrame" as CFString, frameValue)
+            if frameResult == .success {
+                return true
+            }
+        }
+
+        return false
     }
 
     private func isFrameSettable(_ window: AXUIElement) -> Bool {
