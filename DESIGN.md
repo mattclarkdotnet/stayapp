@@ -47,6 +47,8 @@ This separation keeps OS-specific behavior out of core logic and allows determin
 - Captured snapshots are merged with persisted snapshots using per-app freshness:
   keep the latest per-app set when that app was captured at `willSleep`, and only
   use persisted snapshots for apps missing entirely from latest capture.
+- In-memory wake cache is overwritten on every sleep cycle (including empty
+  merges) so stale snapshots from earlier cycles cannot leak into a later wake.
 - Any pending restore task is canceled.
 - Captured snapshots are cached in memory and persisted to disk.
 
@@ -206,6 +208,15 @@ Automated tests focus on deterministic logic in `StayCore`:
 - Timeout fallback behavior
 - Restore-failure retry behavior
 - Environment-change retrigger behavior after timeout
+- Stale-cache prevention across consecutive sleep cycles
+
+Wake-cycle integration uses the `WakeCycleScenarios` executable:
+
+- `prepare finder|app`: create real windows, place one per display, persist state,
+  optionally sleep the machine
+- `verify finder|app`: wait for display readiness, perturb one tracked window,
+  run restore attempts, then verify final display+frame alignment
+- `verify ... --check-only`: passive post-wake validation without perturb/restore
 
 Physical sleep/display wake timing is intentionally left for manual/QA validation on real hardware.
 

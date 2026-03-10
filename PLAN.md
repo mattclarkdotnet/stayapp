@@ -1,45 +1,43 @@
-# Plan: Manual-First Restore Baseline
+# Plan: Complex Wake/Login Ordering
 
-## Roadmap Item
+## Roadmap Alignment
 
-Manual Capture/Restore Reliability
+- `Now`: Complex wake ordering is handled explicitly.
+- `Next`: Multiple workspaces (out of scope for this plan).
+- `Later`: child windows, full screen apps, monitor-config changes, productization.
 
 ## Objective
 
-Make simple, manually invoked capture/restore flows reliable before investing in sleep/wake-specific hardening.
+Handle wake sequences where displays become available in different orders, including login with only one active display, using explicit `StayCore` state machines (not ad-hoc branching).
 
-## Execution Plan
+## Implementation Plan
 
-1. Establish Manual Baseline Scenarios
-- Define and repeatedly validate the minimum manual scenarios:
-  - single-window restore
-  - two-window/two-display restore
-  - Finder-specific dual-window restore
-- Treat failures here as blockers for further wake-flow work.
+1. Define the wake sequencing state machine in `StayCore`
+- Introduce explicit states for: pre-sleep captured, waking/not-ready, partial-display-ready, restoring, waiting-for-environment-change, completed.
+- Define typed transition events for: `willSleep`, `didWake`, `screensDidWake`, session active/inactive, display readiness changes, timeout.
 
-2. Fix Core Matching/Placement Gaps
-- Prioritize deterministic manual restore correctness over retry policy tuning.
-- Keep app-specific behavior isolated and documented (for example Finder quirks).
-- Improve observability for unmatched windows and frame-write failures during manual runs.
+2. Move orchestration decisions behind state transitions
+- Keep policy in a reducer-style transition function.
+- Keep side effects (capture/restore/schedule) in the imperative shell.
+- Remove ad-hoc conditional flow that duplicates transition logic.
 
-3. Codify Baseline in Tests
-- Add/expand deterministic tests that model each manual baseline scenario.
-- For each reproduced regression, add a failing test before patching.
-- Keep test focus on logic that does not require real sleep cycles.
+3. Add deterministic tests for wake-order permutations
+- Two displays wake in order A->B and B->A.
+- Login occurs before second display is online.
+- Duplicate/repeated wake and readiness events.
+- Timeout followed by later environment change.
 
-4. Reintroduce Sleep/Wake Scenarios
-- Once manual baseline + tests are stable, validate full wake orchestration.
-- Only then revisit advanced retry/cooldown tuning for non-converging windows.
+4. Validate in real scenarios
+- Run `WakeCycleScenarios` for `finder` and `app` through multiple wake cycles.
+- Confirm no restore thrash and correct final placement after delayed display availability.
 
-## Success Criteria
+## Exit Criteria
 
-- Manual capture/restore works for baseline scenarios without ad-hoc operator intervention.
-- Baseline scenarios are covered by automated tests and stay green.
-- Sleep/wake tuning work starts only after manual baseline reliability is demonstrated.
+- State machine transitions are explicit and documented in `DESIGN.md`.
+- New tests cover wake-order and single-display-login permutations.
+- `finder` and `app` wake-cycle scenarios remain stable.
+- No new ad-hoc wake-flow branches are introduced outside state transitions.
 
-## Next Planning Note
+## Promotion Rule
 
-- After the current baseline is locked, prioritize complex wake/login timing cases:
-  - displays waking in different orders
-  - login completed while only one display is active
-- Model these flows with explicit state machines in `StayCore`; do not add ad-hoc branching logic.
+When all exit criteria pass, move this roadmap item from `Now` to `Completed`, and promote `Next` (`Multiple workspaces`) into `Now`.

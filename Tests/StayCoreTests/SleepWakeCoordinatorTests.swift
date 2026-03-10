@@ -152,6 +152,42 @@ struct SleepWakeCoordinatorTests {
         #expect(repository.loadCount == 1)
     }
 
+    @Test("Empty capture+repository clears stale cached snapshots for next wake")
+    func emptyCaptureAndRepositoryClearsStaleCachedSnapshots() {
+        let stale = [sampleSnapshot(title: "Stale", index: 0)]
+
+        let capture = StubCaptureService()
+        let restore = SpyRestoreService()
+        let repository = InMemoryRepository()
+        let scheduler = ManualScheduler()
+
+        let coordinator = SleepWakeCoordinator(
+            capturing: capture,
+            restoring: restore,
+            repository: repository,
+            scheduler: scheduler,
+            wakeDelay: 0
+        )
+
+        // First cycle caches and restores a valid snapshot.
+        capture.nextSnapshots = stale
+        coordinator.handleWillSleep()
+        coordinator.handleDidWake()
+        scheduler.runAll()
+        #expect(restore.calls.count == 1)
+        #expect(restore.calls[0] == stale)
+
+        // Second cycle has no capture data and no persisted fallback.
+        capture.nextSnapshots = []
+        repository.saved = []
+        coordinator.handleWillSleep()
+        coordinator.handleDidWake()
+        scheduler.runAll()
+
+        // No second restore should occur; stale cache must not leak across cycles.
+        #expect(restore.calls.count == 1)
+    }
+
     @Test("Restore waits until readiness checker reports ready")
     func restoreWaitsUntilReady() {
         let snapshots = [sampleSnapshot(title: "Chrome", index: 0)]
@@ -613,7 +649,8 @@ struct SleepWakeCoordinatorTests {
         #expect(scheduler.pendingCount == 0)
     }
 
-    @Test("Moved-count jitter with unchanged residual state parks then retries on environment change")
+    @Test(
+        "Moved-count jitter with unchanged residual state parks then retries on environment change")
     func movedCountJitterConverges() {
         let snapshots = [sampleSnapshot(title: "Finder", index: 0)]
 

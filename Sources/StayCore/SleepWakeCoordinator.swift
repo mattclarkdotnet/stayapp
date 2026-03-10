@@ -25,17 +25,24 @@ public final class SleepWakeCoordinator {
     private let maxPostTimeoutEnvironmentRetries: Int
 
     private let lock = NSLock()
+    // Top-level sleep gate: wake events are ignored unless a corresponding
+    // sleep cycle was observed.
     private var isSleeping = false
+    // Last capture payload to restore after wake; overwritten on every sleep.
     private var cachedSnapshots: [WindowSnapshot] = []
+    // Pending work for the current wake cycle.
     private var pendingRestoreSnapshots: [WindowSnapshot] = []
     private var isAwaitingPostWakeRestore = false
     private var restoreDeadline: Date?
     private var restoreTask: CancellableTask?
+    // Retry/convergence tracking for the current wake cycle.
     private var stagnantRestoreAttemptCount = 0
     private var bestRecoverableFailureCount: Int?
     private var postTimeoutRetryCount = 0
     private var hasObservedPlacementProgress = false
     private var lastIncompleteRestoreResult: WindowRestoreResult?
+    // Deferred-space wait mode: pause interval retries until an environment
+    // signal indicates hidden/inactive-space windows may be exposed again.
     private var isWaitingForDeferredSpaceExposure = false
     private var requiresActiveSpaceChangeForDeferredRestore = false
 
@@ -79,21 +86,10 @@ public final class SleepWakeCoordinator {
         )
 
         lock.lock()
-        restoreTask?.cancel()
-        restoreTask = nil
-        isAwaitingPostWakeRestore = false
-        pendingRestoreSnapshots = []
-        restoreDeadline = nil
-        stagnantRestoreAttemptCount = 0
-        bestRecoverableFailureCount = nil
-        postTimeoutRetryCount = 0
-        hasObservedPlacementProgress = false
-        lastIncompleteRestoreResult = nil
-        isWaitingForDeferredSpaceExposure = false
-        requiresActiveSpaceChangeForDeferredRestore = false
-        if !snapshots.isEmpty {
-            cachedSnapshots = snapshots
-        }
+        clearRestoreState()
+        // Always overwrite the cache for the new sleep cycle, even when empty,
+        // so stale prior-cycle snapshots are never reused accidentally.
+        cachedSnapshots = snapshots
         isSleeping = true
         lock.unlock()
 
@@ -123,11 +119,7 @@ public final class SleepWakeCoordinator {
         }
 
         guard !snapshots.isEmpty else {
-            isAwaitingPostWakeRestore = false
-            pendingRestoreSnapshots = []
-            restoreDeadline = nil
-            isWaitingForDeferredSpaceExposure = false
-            requiresActiveSpaceChangeForDeferredRestore = false
+            clearRestoreState()
             lock.unlock()
             return
         }
@@ -135,13 +127,8 @@ public final class SleepWakeCoordinator {
         isAwaitingPostWakeRestore = true
         pendingRestoreSnapshots = snapshots
         restoreDeadline = Date().addingTimeInterval(maxWaitAfterWake)
-        stagnantRestoreAttemptCount = 0
-        bestRecoverableFailureCount = nil
-        postTimeoutRetryCount = 0
-        hasObservedPlacementProgress = false
-        lastIncompleteRestoreResult = nil
-        isWaitingForDeferredSpaceExposure = false
-        requiresActiveSpaceChangeForDeferredRestore = false
+        resetRestoreAttemptTracking()
+        clearDeferredExposureWait()
         if let restoreDeadline {
             logger.info(
                 "Wake cycle started; awaiting restore for \(snapshots.count, privacy: .public) snapshot(s) with deadline \(restoreDeadline.ISO8601Format(), privacy: .public)"
@@ -362,11 +349,19 @@ public final class SleepWakeCoordinator {
         pendingRestoreSnapshots = []
         isAwaitingPostWakeRestore = false
         restoreDeadline = nil
+        resetRestoreAttemptTracking()
+        clearDeferredExposureWait()
+    }
+
+    private func resetRestoreAttemptTracking() {
         stagnantRestoreAttemptCount = 0
         bestRecoverableFailureCount = nil
         postTimeoutRetryCount = 0
         hasObservedPlacementProgress = false
         lastIncompleteRestoreResult = nil
+    }
+
+    private func clearDeferredExposureWait() {
         isWaitingForDeferredSpaceExposure = false
         requiresActiveSpaceChangeForDeferredRestore = false
     }
@@ -378,7 +373,8 @@ public final class SleepWakeCoordinator {
         let repeatedResidualState: Bool
         if let lastIncompleteRestoreResult {
             repeatedResidualState =
-                lastIncompleteRestoreResult.recoverableFailureCount == result.recoverableFailureCount
+                lastIncompleteRestoreResult.recoverableFailureCount
+                == result.recoverableFailureCount
                 && lastIncompleteRestoreResult.deferredSnapshotCount == result.deferredSnapshotCount
                 && lastIncompleteRestoreResult.alreadyAlignedCount == result.alreadyAlignedCount
         } else {

@@ -239,6 +239,12 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
             )
         }
 
+        // Restore pipeline per invocation:
+        // 1) partition snapshots per app and per active space,
+        // 2) opportunistically expose AX windows (activation where safe),
+        // 3) confidence-match snapshots to live windows,
+        // 4) apply frame writes with app-specific convergence checks,
+        // 5) return structured progress so coordinator can decide retry/park.
         // Group by process to avoid cross-app window matching.
         let grouped = groupedSnapshotsByTargetPID(snapshots)
         let onScreenWindowNumbersByPID = onScreenWindowNumbersByPID()

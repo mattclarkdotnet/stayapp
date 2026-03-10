@@ -17,7 +17,7 @@ Maintain a set of documentation files that stay in sync with the codebase:
   - DESIGN.md: documents the design decisions and architecture of the codebase.  
   - TESTING.md: documents the testing strategy and tools used for the codebase overall
   - ROADMAP.md: documents the planned future development of the codebase in the form of releases, versions, and features
-  - PLAN.md: documents the plan to implement the current roadmap item
+  - PLAN.md: documents the plan to implement the current roadmap item.  Edit this file as needed, it's intended to be a "moment in time" snapshot of the plan.  When the roadmap changes replace this with a new plan
   - tests/
     - TESTS.md: documents how the test suite supports the testing strategy from TESTING.md, the state of coverage, any notable edge cases
     - SCENARIOS.md: documents the top level user-focused test scenarios and their expected outcomes in BDD style (GIVEN, WHEN, THEN)
