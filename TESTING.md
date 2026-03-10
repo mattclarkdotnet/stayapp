@@ -153,19 +153,20 @@ Gate:
 
 Scope:
 
+- real-app capture/restore scenarios without sleep (from `Tests/SCENARIOS.md`)
 - end-to-end app process startup
-- notification wiring (`willSleep`, `didWake`, session/space/screen change observers)
 - logging and diagnostics behavior
 - sanity checks around snapshot persistence path and format
 
 How:
 
-- use manual trigger paths from the menu (`Capture Layout Now`, `Restore Layout Now`)
-- run with live logs (`log stream --predicate 'subsystem == "com.stay.app"'`)
-- verify restore loops and error handling when AX operations fail transiently
+- run `swift test --filter StayIntegrationTests.RealAppScenarioTests`
+- tests launch real apps (Finder/TextEdit), move real windows across screens, then run capture/restore
+- use logs (`log stream --predicate 'subsystem == "com.stay.app"'`) when investigating failures
 
 Limitations:
 
+- requires a real two-external-display setup and Accessibility permission
 - true monitor wake timing and lock-screen transitions remain difficult to fully automate
 
 ### 3. Human-in-Loop QA (real hardware, real sleep cycle)

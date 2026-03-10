@@ -23,7 +23,7 @@ let package = Package(
         ),
         .testTarget(
             name: "StayIntegrationTests",
-            dependencies: ["StayCore"]
-        )
+            dependencies: ["StayCore", "Stay"]
+        ),
     ]
 )
