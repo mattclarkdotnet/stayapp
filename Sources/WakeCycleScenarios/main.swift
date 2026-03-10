@@ -13,13 +13,20 @@ struct WakeCycleScenarioRunner {
     enum Scenario: String {
         case finder
         case app
+        case freecad
 
         var bundleID: String {
+            candidateBundleIDs[0]
+        }
+
+        var candidateBundleIDs: [String] {
             switch self {
             case .finder:
-                return "com.apple.finder"
+                return ["com.apple.finder"]
             case .app:
-                return "com.apple.TextEdit"
+                return ["com.apple.TextEdit"]
+            case .freecad:
+                return ["org.freecad.FreeCAD", "org.freecadweb.FreeCAD"]
             }
         }
 
@@ -29,6 +36,28 @@ struct WakeCycleScenarioRunner {
                 return "Finder"
             case .app:
                 return "TextEdit"
+            case .freecad:
+                return "FreeCAD"
+            }
+        }
+    }
+
+    private enum FreeCADChildPanel: String, CaseIterable {
+        case tasks = "tasks"
+        case model = "model"
+        case reportView = "report view"
+        case pythonConsole = "python console"
+
+        var matchKeywords: [String] {
+            switch self {
+            case .tasks:
+                return ["tasks", "task"]
+            case .model:
+                return ["model", "tree"]
+            case .reportView:
+                return ["report view", "report"]
+            case .pythonConsole:
+                return ["python console", "python"]
             }
         }
     }
@@ -74,6 +103,7 @@ struct WakeCycleScenarioRunner {
 
     struct LiveWindow {
         let element: AXUIElement
+        let number: Int?
         let title: String?
         let role: String?
         let subrole: String?
@@ -127,8 +157,8 @@ struct WakeCycleScenarioRunner {
         print(
             """
             Usage:
-              swift run WakeCycleScenarios prepare <finder|app> [--no-sleep]
-              swift run WakeCycleScenarios verify <finder|app> [--check-only]
+              swift run WakeCycleScenarios prepare <finder|app|freecad> [--no-sleep]
+              swift run WakeCycleScenarios verify <finder|app|freecad> [--check-only]
 
             Notes:
               - Requires exactly two external displays and no built-in display.
@@ -156,10 +186,22 @@ struct WakeCycleScenarioRunner {
     private func prepare(scenario: Scenario, shouldSleep: Bool) throws {
         try ensurePrerequisites()
         let displays = try validatedExternalDisplays()
+        let running = try ensureAppRunning(scenario: scenario)
+        let pid = running.pid
+
+        if scenario == .freecad {
+            try prepareFreeCADScenario(
+                scenario: scenario,
+                activeBundleID: running.bundleID,
+                pid: pid,
+                displays: displays,
+                shouldSleep: shouldSleep
+            )
+            return
+        }
+
         let display1 = displays[0]
         let display2 = displays[1]
-
-        let pid = try ensureAppRunning(bundleID: scenario.bundleID)
         let baselineWindows = liveWindows(pid: pid)
 
         let creation = try createScenarioWindows(scenario: scenario)
@@ -213,7 +255,7 @@ struct WakeCycleScenarioRunner {
 
         let state = ScenarioState(
             scenario: scenario.rawValue,
-            bundleID: scenario.bundleID,
+            bundleID: running.bundleID,
             preparedAt: Date(),
             trackedWindows: [
                 TrackedWindow(
@@ -247,14 +289,132 @@ struct WakeCycleScenarioRunner {
         }
     }
 
+    private func prepareFreeCADScenario(
+        scenario: Scenario,
+        activeBundleID: String,
+        pid: Int32,
+        displays: [(screen: NSScreen, id: UInt32)],
+        shouldSleep: Bool
+    ) throws {
+        let (primaryDisplay, secondaryDisplay) = try primarySecondaryDisplays(from: displays)
+        let windowsReady = waitUntil(timeout: 20) {
+            self.liveWindows(pid: pid).count >= 5
+        }
+        guard windowsReady else {
+            throw RunnerError.failed(
+                "timed out waiting for FreeCAD windows (expected main + tasks/model/report/python)")
+        }
+
+        guard
+            let tracked = selectFreeCADScenarioWindows(pid: pid),
+            tracked.children.count == FreeCADChildPanel.allCases.count
+        else {
+            throw RunnerError.failed(
+                "could not identify FreeCAD main window and child windows (tasks/model/report view/python console)"
+            )
+        }
+
+        let mainWindow = tracked.main.element
+        let childWindows = tracked.children.map(\.window.element)
+        let mainPlaced = moveMainWindowToScreen(
+            element: mainWindow,
+            screen: primaryDisplay.screen,
+            offset: 0
+        )
+        guard mainPlaced else {
+            throw RunnerError.failed("failed to place FreeCAD main window on primary display")
+        }
+
+        let childrenPlaced = moveChildWindowsToScreen(
+            elements: childWindows, screen: secondaryDisplay.screen)
+        guard childrenPlaced else {
+            throw RunnerError.failed("failed to place FreeCAD child windows on secondary display")
+        }
+
+        let settled = waitUntil(timeout: 10) {
+            guard
+                let mainFrame = self.frameForWindow(mainWindow),
+                self.displayID(for: mainFrame) == primaryDisplay.id
+            else {
+                return false
+            }
+            return childWindows.allSatisfy { window in
+                guard let frame = self.frameForWindow(window) else {
+                    return false
+                }
+                return self.displayID(for: frame) == secondaryDisplay.id
+            }
+        }
+        guard settled else {
+            throw RunnerError.failed("FreeCAD windows did not settle on expected displays")
+        }
+
+        var trackedWindows: [TrackedWindow] = []
+        trackedWindows.reserveCapacity(1 + tracked.children.count)
+
+        guard let mainFrame = frameForWindow(mainWindow) else {
+            throw RunnerError.failed("could not read FreeCAD main window frame after placement")
+        }
+        let mainTitleHint = normalized(tracked.main.title) ?? "freecad"
+        trackedWindows.append(
+            TrackedWindow(
+                titleHint: mainTitleHint,
+                expectedDisplayID: primaryDisplay.id,
+                expectedFrame: CodableRect(mainFrame)
+            )
+        )
+
+        for child in tracked.children {
+            guard let frame = frameForWindow(child.window.element) else {
+                throw RunnerError.failed(
+                    "could not read FreeCAD child window frame after placement")
+            }
+            trackedWindows.append(
+                TrackedWindow(
+                    titleHint: child.panel.rawValue,
+                    expectedDisplayID: secondaryDisplay.id,
+                    expectedFrame: CodableRect(frame)
+                )
+            )
+        }
+
+        let state = ScenarioState(
+            scenario: scenario.rawValue,
+            bundleID: activeBundleID,
+            preparedAt: Date(),
+            trackedWindows: trackedWindows,
+            createdPaths: []
+        )
+        try persistState(state, to: stateURL(for: scenario))
+
+        print("Prepared wake-cycle scenario '\(scenario.rawValue)' for \(scenario.appName).")
+        print("State file: \(stateURL(for: scenario).path)")
+        print("Main window (\(mainTitleHint)) -> primary display \(primaryDisplay.id)")
+        for child in tracked.children {
+            print(
+                "Child window (\(child.panel.rawValue)) -> secondary display \(secondaryDisplay.id)"
+            )
+        }
+
+        if shouldSleep {
+            print("Sleeping machine in 3 seconds. After wake/login, run:")
+            print("  swift run WakeCycleScenarios verify \(scenario.rawValue)")
+            Thread.sleep(forTimeInterval: 3)
+            _ = runCommand("/usr/bin/pmset", ["sleepnow"])
+        } else {
+            print("Skipped sleep (--no-sleep). Manually sleep/wake, then run verify.")
+        }
+    }
+
     private func verify(scenario: Scenario, checkOnly: Bool) throws {
         try ensurePrerequisites()
         let displays = try validatedExternalDisplays()
         let state = try loadState(from: stateURL(for: scenario))
 
-        guard state.bundleID == scenario.bundleID else {
+        guard scenario.candidateBundleIDs.contains(state.bundleID) else {
             throw RunnerError.failed(
-                "state bundle mismatch: expected \(scenario.bundleID), found \(state.bundleID)")
+                "state bundle mismatch: expected one of \(scenario.candidateBundleIDs), found \(state.bundleID)"
+            )
         }
 
         let requiredDisplays = Set(state.trackedWindows.map(\.expectedDisplayID))
@@ -263,7 +423,7 @@ struct WakeCycleScenarioRunner {
             throw RunnerError.failed("required displays not ready after wake")
         }
 
-        let pid = try ensureAppRunning(bundleID: scenario.bundleID)
+        let pid = try ensureAppRunning(bundleID: state.bundleID)
         print("Verifying scenario '\(scenario.rawValue)' for app pid=\(pid)")
 
         if checkOnly {
@@ -363,6 +523,19 @@ struct WakeCycleScenarioRunner {
         return result
     }
 
+    private func primarySecondaryDisplays(from displays: [(screen: NSScreen, id: UInt32)]) throws
+        -> (primary: (screen: NSScreen, id: UInt32), secondary: (screen: NSScreen, id: UInt32))
+    {
+        guard displays.count == 2 else {
+            throw RunnerError.failed("expected exactly two displays")
+        }
+        guard let primaryIndex = displays.firstIndex(where: { CGDisplayIsMain($0.id) != 0 }) else {
+            throw RunnerError.failed("could not identify primary macOS display")
+        }
+        let secondaryIndex = primaryIndex == 0 ? 1 : 0
+        return (primary: displays[primaryIndex], secondary: displays[secondaryIndex])
+    }
+
     private func createScenarioWindows(scenario: Scenario) throws -> (
         script: String, titleHints: [String], createdPaths: [String]
     ) {
@@ -412,7 +585,34 @@ struct WakeCycleScenarioRunner {
                 [fileOne.lastPathComponent.lowercased(), fileTwo.lastPathComponent.lowercased()],
                 [fileOne.path, fileTwo.path]
             )
+        case .freecad:
+            throw RunnerError.failed(
+                "FreeCAD scenario uses explicit window selection, not scripted creation")
         }
+    }
+
+    private func ensureAppRunning(scenario: Scenario) throws -> (bundleID: String, pid: Int32) {
+        for bundleID in scenario.candidateBundleIDs {
+            if let running = NSWorkspace.shared.runningApplications.first(where: {
+                !$0.isTerminated && $0.bundleIdentifier == bundleID
+            }) {
+                _ = running.activate()
+                return (bundleID: bundleID, pid: running.processIdentifier)
+            }
+        }
+
+        for bundleID in scenario.candidateBundleIDs {
+            guard runAppleScript("tell application id \"\(bundleID)\" to activate") else {
+                continue
+            }
+            if let pid = waitForPID(bundleID: bundleID, timeout: 10) {
+                return (bundleID: bundleID, pid: pid)
+            }
+        }
+
+        throw RunnerError.failed(
+            "could not launch app \(scenario.appName) using bundle IDs \(scenario.candidateBundleIDs)"
+        )
     }
 
     private func ensureAppRunning(bundleID: String) throws -> Int32 {
@@ -472,7 +672,13 @@ struct WakeCycleScenarioRunner {
             }
 
             return LiveWindow(
-                element: element, title: title, role: role, subrole: subrole, frame: frame)
+                element: element,
+                number: windowNumber(of: element),
+                title: title,
+                role: role,
+                subrole: subrole,
+                frame: frame
+            )
         }
     }
 
@@ -496,6 +702,90 @@ struct WakeCycleScenarioRunner {
     private func bestWindow(matchingTitleHint hint: String, in windows: [LiveWindow]) -> LiveWindow?
     {
         windows.first(where: { normalized($0.title)?.contains(hint) == true })
+    }
+
+    private func selectFreeCADScenarioWindows(pid: Int32) -> (
+        main: LiveWindow, children: [(panel: FreeCADChildPanel, window: LiveWindow)]
+    )? {
+        let windows = liveWindows(pid: pid)
+        guard windows.count >= 5 else {
+            return nil
+        }
+
+        var remaining = windows
+        var children: [(panel: FreeCADChildPanel, window: LiveWindow)] = []
+        children.reserveCapacity(FreeCADChildPanel.allCases.count)
+
+        for panel in FreeCADChildPanel.allCases {
+            guard let best = bestFreeCADChildWindow(for: panel, in: remaining) else {
+                return nil
+            }
+            children.append((panel: panel, window: best))
+            remaining.removeAll(where: { candidate in
+                CFEqual(candidate.element, best.element)
+            })
+        }
+
+        guard let main = chooseFreeCADMainWindow(from: remaining) else {
+            return nil
+        }
+
+        return (main: main, children: children)
+    }
+
+    private func chooseFreeCADMainWindow(from windows: [LiveWindow]) -> LiveWindow? {
+        guard !windows.isEmpty else {
+            return nil
+        }
+        let titled = windows.filter { normalized($0.title)?.contains("freecad") == true }
+        let pool = titled.isEmpty ? windows : titled
+        return pool.max(by: { windowArea($0.frame) < windowArea($1.frame) })
+    }
+
+    private func bestFreeCADChildWindow(for panel: FreeCADChildPanel, in windows: [LiveWindow])
+        -> LiveWindow?
+    {
+        let ranked = windows.compactMap { window -> (window: LiveWindow, score: Int)? in
+            let score = freeCADChildWindowScore(window: window, panel: panel)
+            guard score > 0 else {
+                return nil
+            }
+            return (window: window, score: score)
+        }.sorted { lhs, rhs in
+            if lhs.score != rhs.score {
+                return lhs.score > rhs.score
+            }
+            let lhsArea = windowArea(lhs.window.frame)
+            let rhsArea = windowArea(rhs.window.frame)
+            if lhsArea != rhsArea {
+                return lhsArea > rhsArea
+            }
+            if lhs.window.number != rhs.window.number {
+                return (lhs.window.number ?? Int.max) < (rhs.window.number ?? Int.max)
+            }
+            if lhs.window.frame.minX != rhs.window.frame.minX {
+                return lhs.window.frame.minX < rhs.window.frame.minX
+            }
+            return lhs.window.frame.minY < rhs.window.frame.minY
+        }
+        return ranked.first?.window
+    }
+
+    private func freeCADChildWindowScore(window: LiveWindow, panel: FreeCADChildPanel) -> Int {
+        guard
+            let title = normalized(window.title)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        else {
+            return 0
+        }
+        var score = 0
+        if title == panel.rawValue {
+            score += 6
+        }
+        for keyword in panel.matchKeywords where title.contains(keyword) {
+            score += 2
+        }
+        return score
     }
 
     private func waitForWindows(
@@ -527,6 +817,68 @@ struct WakeCycleScenarioRunner {
         return CGRect(x: x, y: y, width: width, height: height)
     }
 
+    @discardableResult
+    private func moveMainWindowToScreen(element: AXUIElement, screen: NSScreen, offset: Int) -> Bool
+    {
+        guard let frame = frameForWindow(element) else {
+            return false
+        }
+        let visible = screen.visibleFrame
+        let preferred = CGPoint(
+            x: visible.minX + 50 + (CGFloat(offset) * 35),
+            y: visible.minY + 70 + (CGFloat(offset) * 25)
+        )
+        let origin = clampedRectOrigin(size: frame.size, preferred: preferred, in: visible)
+        return setWindowOrigin(element, origin: origin)
+    }
+
+    @discardableResult
+    private func moveChildWindowsToScreen(elements: [AXUIElement], screen: NSScreen) -> Bool {
+        guard !elements.isEmpty else {
+            return true
+        }
+
+        let windows = elements.compactMap { element -> (element: AXUIElement, frame: CGRect)? in
+            guard let frame = frameForWindow(element) else {
+                return nil
+            }
+            return (element: element, frame: frame)
+        }
+        guard windows.count == elements.count else {
+            return false
+        }
+
+        var group = windows[0].frame
+        for window in windows.dropFirst() {
+            group = group.union(window.frame)
+        }
+
+        let visible = screen.visibleFrame
+        let preferred = CGPoint(x: visible.maxX - group.width - 40, y: visible.minY + 40)
+        let targetGroupOrigin = clampedRectOrigin(
+            size: group.size, preferred: preferred, in: visible)
+        let delta = CGPoint(
+            x: targetGroupOrigin.x - group.minX, y: targetGroupOrigin.y - group.minY)
+
+        return windows.allSatisfy { window in
+            let targetOrigin = CGPoint(
+                x: window.frame.minX + delta.x,
+                y: window.frame.minY + delta.y
+            )
+            return setWindowOrigin(window.element, origin: targetOrigin)
+        }
+    }
+
+    private func clampedRectOrigin(size: CGSize, preferred: CGPoint, in bounds: CGRect) -> CGPoint {
+        let minX = bounds.minX
+        let minY = bounds.minY
+        let maxX = max(bounds.maxX - size.width, minX)
+        let maxY = max(bounds.maxY - size.height, minY)
+        let x = min(max(preferred.x, minX), maxX)
+        let y = min(max(preferred.y, minY), maxY)
+        return CGPoint(x: x, y: y)
+    }
+
     private func setWindowFrame(_ window: AXUIElement, frame: CGRect) -> Bool {
         var origin = frame.origin
         var size = frame.size
@@ -554,6 +906,33 @@ struct WakeCycleScenarioRunner {
             }
         }
 
+        return false
+    }
+
+    @discardableResult
+    private func setWindowOrigin(_ window: AXUIElement, origin: CGPoint) -> Bool {
+        var mutableOrigin = origin
+        guard let position = AXValueCreate(.cgPoint, &mutableOrigin) else {
+            return false
+        }
+
+        let positionResult = AXUIElementSetAttributeValue(
+            window, kAXPositionAttribute as CFString, position)
+        if positionResult == .success {
+            return true
+        }
+
+        guard var frame = frameForWindow(window) else {
+            return false
+        }
+        frame.origin = origin
+        if let frameValue = AXValueCreate(.cgRect, &frame) {
+            let frameResult = AXUIElementSetAttributeValue(
+                window, "AXFrame" as CFString, frameValue)
+            if frameResult == .success {
+                return true
+            }
+        }
         return false
     }
 
@@ -601,6 +980,20 @@ struct WakeCycleScenarioRunner {
         }
 
         return CGRect(origin: origin, size: size)
+    }
+
+    private func windowArea(_ frame: CGRect) -> CGFloat {
+        frame.width * frame.height
+    }
+
+    private func windowNumber(of window: AXUIElement) -> Int? {
+        var value: CFTypeRef?
+        guard
+            AXUIElementCopyAttributeValue(window, "AXWindowNumber" as CFString, &value) == .success
+        else {
+            return nil
+        }
+        return (value as? NSNumber)?.intValue
     }
 
     private func stringValue(of element: AXUIElement, attribute: CFString) -> String? {
@@ -886,11 +1279,18 @@ struct WakeCycleScenarioRunner {
             }
 
             let targetFrame = restoreFrame(for: scenario, tracked: tracked, live: live)
-            if setWindowFrame(live.element, frame: targetFrame) {
+            let applyMove: (AXUIElement, CGRect) -> Bool = { element, frame in
+                if shouldPreserveSizeOnRestore(scenario: scenario, tracked: tracked) {
+                    return setWindowOrigin(element, origin: frame.origin)
+                }
+                return setWindowFrame(element, frame: frame)
+            }
+
+            if applyMove(live.element, targetFrame) {
                 sleepRunLoop(0.2)
                 if isAligned(scenario: scenario, tracked: tracked, element: live.element) {
                     moved += 1
-                } else if setWindowFrame(live.element, frame: targetFrame) {
+                } else if applyMove(live.element, targetFrame) {
                     sleepRunLoop(0.2)
                     if isAligned(scenario: scenario, tracked: tracked, element: live.element) {
                         moved += 1
@@ -931,7 +1331,12 @@ struct WakeCycleScenarioRunner {
         }
 
         let frame = perturbationFrame(for: scenario, live: chosen.1, on: targetDisplay.screen)
-        let moved = setWindowFrame(chosen.1.element, frame: frame)
+        let moved: Bool
+        if shouldPreserveSizeOnRestore(scenario: scenario, tracked: chosen.0) {
+            moved = setWindowOrigin(chosen.1.element, origin: frame.origin)
+        } else {
+            moved = setWindowFrame(chosen.1.element, frame: frame)
+        }
         if moved {
             print(
                 "Perturbed '\(chosen.0.titleHint)' to display \(targetDisplay.id) before verification."
@@ -999,7 +1404,7 @@ struct WakeCycleScenarioRunner {
         -> CGRect
     {
         let base = scenarioFrame(on: screen, offset: 2)
-        if scenario == .finder {
+        if scenario == .finder || scenario == .freecad {
             return CGRect(
                 x: base.minX,
                 y: base.minY,
@@ -1008,6 +1413,15 @@ struct WakeCycleScenarioRunner {
             )
         }
         return base
+    }
+
+    private func shouldPreserveSizeOnRestore(scenario: Scenario, tracked: TrackedWindow) -> Bool {
+        guard scenario == .freecad else {
+            return false
+        }
+        return FreeCADChildPanel.allCases.contains { panel in
+            tracked.titleHint.contains(panel.rawValue)
+        }
     }
 
     private func isAligned(scenario: Scenario, tracked: TrackedWindow, live: LiveWindow) -> Bool {
@@ -1059,6 +1473,8 @@ struct WakeCycleScenarioRunner {
             return (position: 8, size: 12)
         case .app:
             return (position: 4, size: 6)
+        case .freecad:
+            return (position: 8, size: 8)
         }
     }
 

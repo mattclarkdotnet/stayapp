@@ -166,11 +166,11 @@ How:
 - tests launch real apps (Finder/TextEdit/FreeCAD), move real windows across screens, then run capture/restore
 - use logs (`log stream --predicate 'subsystem == "com.stay.app"'`) when investigating failures
 - for full sleep/wake scenarios, use this exact order:
-  1. `swift run WakeCycleScenarios prepare finder|app`
+  1. `swift run WakeCycleScenarios prepare finder|app|freecad`
   2. let the machine sleep and wake
   3. log in after wake
-  4. `swift run WakeCycleScenarios verify finder|app` (default: perturb one window, restore, verify display+frame)
-  5. optional passive check: `swift run WakeCycleScenarios verify finder|app --check-only`
+  4. `swift run WakeCycleScenarios verify finder|app|freecad` (default: perturb one window, restore, verify display+frame)
+  5. optional passive check: `swift run WakeCycleScenarios verify finder|app|freecad --check-only`
 
 Limitations:
 

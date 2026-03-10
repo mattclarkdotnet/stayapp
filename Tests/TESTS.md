@@ -37,11 +37,16 @@ swift run WakeCycleScenarios verify finder
 swift run WakeCycleScenarios prepare app
 # ...machine sleeps, wakes, and you log in...
 swift run WakeCycleScenarios verify app
+
+# FreeCAD scenario
+swift run WakeCycleScenarios prepare freecad
+# ...machine sleeps, wakes, and you log in...
+swift run WakeCycleScenarios verify freecad
 ```
 
 Required order for wake-cycle scenarios:
 
-1. Run `prepare` for the scenario (`finder` or `app`).
+1. Run `prepare` for the scenario (`finder`, `app`, or `freecad`).
 2. Let the machine complete the sleep/wake cycle.
 3. Log in after wake.
 4. Run `verify` for the same scenario.
@@ -51,6 +56,7 @@ Optional passive check:
 ```bash
 swift run WakeCycleScenarios verify finder --check-only
 swift run WakeCycleScenarios verify app --check-only
+swift run WakeCycleScenarios verify freecad --check-only
 ```
 
 ## Real-App Scenario Prerequisites
@@ -106,6 +112,7 @@ Scenarios currently automated from `SCENARIOS.md`:
 - FreeCAD main window + child windows (tasks/model/report/python console) across two screens
 - full wake/sleep Finder two-window scenario (`WakeCycleScenarios prepare/verify finder`)
 - full wake/sleep app two-window scenario (`WakeCycleScenarios prepare/verify app`)
+- full wake/sleep FreeCAD main+child-window scenario (`WakeCycleScenarios prepare/verify freecad`)
 
 ## Adding New Test Cases
 

@@ -59,3 +59,17 @@ And the user wakes the computer
 And the user waits until both screens have come out of power standby
 And the user logs in
 Then window 1 should be restored on `screen_1` and window 2 should be restored on `screen_2`
+
+### Scenario 2.3: FreeCAD child windows
+Given that the user has two external screens (`primary_screen` and `secondary_screen`)
+Given that the user's computer has no internal screen
+Given that FreeCAD is launched
+Given that the main FreeCAD window is on `primary_screen`
+Given that the child windows (tasks, model, report view, python console) are on `secondary_screen`
+When the user sleeps the computer
+And the user waits until both screens have gone into power standby
+And the user wakes the computer
+And the user waits until both screens have come out of power standby
+And the user logs in
+Then the main FreeCAD window should be restored on `primary_screen`
+And the child windows should be restored on `secondary_screen`
