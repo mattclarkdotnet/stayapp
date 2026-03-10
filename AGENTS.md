@@ -22,6 +22,10 @@ Maintain a set of documentation files that stay in sync with the codebase:
     - TESTS.md: documents how the test suite supports the testing strategy from TESTING.md, the state of coverage, any notable edge cases
     - SCENARIOS.md: documents the top level user-focused test scenarios and their expected outcomes in BDD style (GIVEN, WHEN, THEN)
 
+### Comments
+
+Comment the codebase thoroughly to show the correspondence to DESIGN.md.  When the code or the design changes, update the comments and DESIGN.md to reflect the current state.  Never write comments that duplicate the code's intent, instead use comments to explain why the code is written the way it is.
+
 ### ROADMAP.md format rules
 
 - `ROADMAP.md` must always use exactly four sections: `Now`, `Next`, `Later`, and `Completed`.
@@ -32,6 +36,17 @@ Maintain a set of documentation files that stay in sync with the codebase:
 - Do not leave completed items in `Now`, `Next`, or `Later`; move them into `Completed`.
 
 Comment the codebase thoroughly to show the correspondence to DESIGN.md.  When the code or the design changes, update the comments and DESIGN.md to reflect the current state.
+
+### PLAN.md format rules
+
+- `PLAN.md` must always use exactly five sections: `Roadmap alignment`, `Objective`, `Scenario mapping`, `Exit criteria`, and `Promotion rule`.
+- `Roadmap alignment` must contain exactly one item that explains how this plan aligns with the roadmap.
+- `Objective` must contain exactly one item that explains the objective of this plan.
+- `Scenario mapping` must list the scenarios that this plan implements.
+- `Exit criteria` must list the exit criteria for this plan.
+- `Promotion rule` must contain exactly one item that explains how this plan should be promoted.
+
+PLAN.md must be replaced every time the roadmap changes, so that it always represnets the plan to achieve the next item on the roadmap.
 
 ## Language and tooling
 - use idiomatic Swift

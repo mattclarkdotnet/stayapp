@@ -213,6 +213,12 @@ Automated tests focus on deterministic logic in `StayCore`:
 - Environment-change retrigger behavior after timeout
 - Stale-cache prevention across consecutive sleep cycles
 
+Real-app no-sleep integration tests in `StayIntegrationTests.RealAppScenarioTests` cover:
+
+- two Finder windows across two displays
+- two TextEdit windows across two displays
+- FreeCAD main window + child windows (tasks/model/report/python console) across two displays
+
 Wake-cycle integration uses the `WakeCycleScenarios` executable:
 
 - `prepare finder|app`: create real windows, place one per display, persist state,

@@ -1,52 +1,58 @@
-# Plan: Complex Wake/Login Ordering
+# Plan: Apps With Child Windows
 
 ## Roadmap Alignment
 
-- `Now`: Complex wake ordering is handled explicitly.
-- `Next`: Multiple workspaces (out of scope for this plan).
-- `Later`: child windows, full screen apps, monitor-config changes, productization.
+- `Now`: Apps with child windows (`FreeCAD`, `KiCad`)
+- `Next`: Multiple workspaces (out of scope for this plan)
+- `Later`: full screen apps, monitor-config changes, productization, complex wake ordering
 
 ## Objective
 
-Handle wake sequences where displays become available in different orders, including login with only one active display, using explicit `StayCore` state machines (not ad-hoc branching).
+Make capture/restore reliable for real apps that expose child/tool windows that are not consistently represented as standard top-level AX windows.
+
+## Scenario Mapping
+
+- Primary scenario target: `Tests/SCENARIOS.md` Scenario 1.3 (`FreeCAD child windows`).
+- Required behavior:
+  - main FreeCAD window restores to screen 1
+  - FreeCAD child windows (tasks/model/report/python console) restore to screen 2
+- Validation order:
+  1. manual capture/restore for Scenario 1.3
+  2. deterministic fixture/service tests that model Scenario 1.3 edge cases
+  3. wake-cycle validation after manual baseline is stable
 
 ## Implementation Plan
 
-1. Define the wake sequencing state machine in `StayCore`
-- Introduce explicit states for: pre-sleep captured, waking/not-ready, partial-display-ready, restoring, waiting-for-environment-change, completed.
-- Define typed transition events for: `willSleep`, `didWake`, `screensDidWake`, session active/inactive, display readiness changes, timeout.
+1. Define child-window restore behavior as explicit rules
+- Document how child/tool windows are discovered, filtered, and included in snapshots.
+- Keep Finder special-casing isolated; do not apply Finder assumptions to other apps.
 
-2. Move orchestration decisions behind state transitions
-- Keep policy in a reducer-style transition function.
-- Keep side effects (capture/restore/schedule) in the imperative shell.
-- Remove ad-hoc conditional flow that duplicates transition logic.
+2. Strengthen snapshot identity for child windows
+- Prefer stable identity (`windowNumber`, role/subrole, title, frame) over index-only matching.
+- Ensure missing titles/partial AX exposure still produces deterministic matching decisions.
 
-3. Add deterministic tests for wake-order permutations
-- Two displays wake in order A->B and B->A.
-- Login occurs before second display is online.
-- Duplicate/repeated wake and readiness events.
-- Timeout followed by later environment change.
+3. Improve restore assignment and defer policy for partial exposure
+- Avoid cross-matching when only a subset of child windows is exposed.
+- Defer safely when confidence is low; retry when environment signals indicate more windows are available.
 
-4. Add deterministic fuzz + replay harness for event ordering
-- Generate seeded pseudo-random event traces (`willSleep`, `didWake`,
-  environment changes, scheduler ticks).
-- Assert invariants on every trace:
-  - no restore before a sleep cycle
-  - at most one scheduled restore task at a time
-  - pending restore snapshot sets never grow within a wake cycle
-  - coordinator reaches quiescence (no scheduled retries) after bounded ticks
-- Persist failing seeds/traces as fixed regression tests.
+4. Add deterministic tests for FreeCAD/KiCad-like behavior
+- Expand fixture/service-level tests for untitled multi-window and child-window sets.
+- Add failing regression tests first for each reproduced mismatch before patching.
+- Add a deterministic Scenario 1.3-style test that separates main window vs child windows across displays.
 
-5. Validate in real scenarios
-- Run `WakeCycleScenarios` for `finder` and `app` through multiple wake cycles.
-- Confirm no restore thrash and correct final placement after delayed display availability.
+5. Add or update real-app scenario coverage
+- Use Scenario 1.3 as the baseline acceptance scenario and add KiCad sibling coverage.
+- Validate manual capture/restore first, then wake-cycle runs.
+- Ensure automated scenario runs visibly move windows (with existing settle pauses) so developers can confirm behavior during execution.
 
 ## Exit Criteria
 
-- State machine transitions are explicit and documented in `DESIGN.md`.
-- New tests cover wake-order and single-display-login permutations.
-- `finder` and `app` wake-cycle scenarios remain stable.
-- No new ad-hoc wake-flow branches are introduced outside state transitions.
+- FreeCAD/KiCad child-window layouts restore correctly in manual capture/restore flows.
+- Scenario 1.3 passes with visible main/child window separation across screens after restore.
+- Automated scenario execution shows visible window motion and final placement for human confirmation.
+- Deterministic tests cover partial AX exposure, untitled child windows, and safe deferral.
+- Existing `finder`/`app` baseline scenarios show no regressions.
+- `DESIGN.md` and code comments describe child-window policy and boundaries clearly.
 
 ## Promotion Rule
 

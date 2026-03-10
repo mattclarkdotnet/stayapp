@@ -163,7 +163,7 @@ Scope:
 How:
 
 - run `swift test --filter StayIntegrationTests.RealAppScenarioTests`
-- tests launch real apps (Finder/TextEdit), move real windows across screens, then run capture/restore
+- tests launch real apps (Finder/TextEdit/FreeCAD), move real windows across screens, then run capture/restore
 - use logs (`log stream --predicate 'subsystem == "com.stay.app"'`) when investigating failures
 - for full sleep/wake scenarios, use this exact order:
   1. `swift run WakeCycleScenarios prepare finder|app`
@@ -175,6 +175,7 @@ How:
 Limitations:
 
 - requires a real two-external-display setup and Accessibility permission
+- FreeCAD Scenario 1.3 also requires visible child/tool windows as independent AX windows
 - true monitor wake timing and lock-screen transitions remain difficult to fully automate
 
 ### 3. Human-in-Loop QA (real hardware, real sleep cycle)

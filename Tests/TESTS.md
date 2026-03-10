@@ -57,7 +57,8 @@ swift run WakeCycleScenarios verify app --check-only
 
 - Exactly two external displays must be active (no built-in display).
 - Accessibility permission for Stay/test process must be granted.
-- Finder and TextEdit must be launchable.
+- Finder, TextEdit, and FreeCAD must be launchable.
+- FreeCAD child windows used in Scenario 1.3 must be visible as independent AX windows.
 - Running these tests will visibly move windows across screens.
 - For wake-cycle scenarios, run `prepare`, let the machine sleep/wake, log in, then run `verify`.
 - `verify` perturbs one tracked window first, then restores and validates display and frame placement.
@@ -85,7 +86,7 @@ Round-trip tests use:
 
 For each real-app scenario:
 
-1. Launch target app and create two real windows.
+1. Launch target app and create/prepare the real windows required by the scenario.
 2. Run capture and store the snapshots as the expected baseline.
 3. Move/resize windows to known incorrect frames.
 4. Run restore.
@@ -98,6 +99,7 @@ Scenarios currently automated from `SCENARIOS.md`:
 
 - two Finder windows, one per screen
 - two non-Finder app windows (TextEdit), one per screen
+- FreeCAD main window + child windows (tasks/model/report/python console) across two screens
 - full wake/sleep Finder two-window scenario (`WakeCycleScenarios prepare/verify finder`)
 - full wake/sleep app two-window scenario (`WakeCycleScenarios prepare/verify app`)
 

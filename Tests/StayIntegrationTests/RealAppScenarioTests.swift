@@ -10,6 +10,8 @@ import Testing
 @Suite("RealAppScenarios")
 @MainActor
 struct RealAppScenarioTests {
+    private let freeCADBundleIDs = ["org.freecad.FreeCAD", "org.freecadweb.FreeCAD"]
+
     @Test("Scenario 1: two Finder windows restore to original screens")
     func finderTwoWindowScenario() {
         runTwoWindowScenario(
@@ -38,6 +40,11 @@ struct RealAppScenarioTests {
         )
     }
 
+    @Test("Scenario 3: FreeCAD main window and child windows restore to original screens")
+    func freeCADChildWindowsScenario() {
+        runFreeCADChildWindowScenario()
+    }
+
     private func runTwoWindowScenario(bundleID: String, createWindowsScript: String) {
         let hasAXPermission = AXIsProcessTrusted()
         #expect(hasAXPermission)
@@ -45,29 +52,13 @@ struct RealAppScenarioTests {
             return
         }
 
-        let screens = NSScreen.screens.sorted { lhs, rhs in
-            if lhs.frame.minX != rhs.frame.minX {
-                return lhs.frame.minX < rhs.frame.minX
-            }
-            return lhs.frame.minY < rhs.frame.minY
-        }
-        #expect(screens.count == 2)
-        guard screens.count == 2 else {
+        guard let displays = validatedTwoExternalDisplays() else {
             return
         }
-
-        guard
-            let displayOneID = displayID(for: screens[0]),
-            let displayTwoID = displayID(for: screens[1])
-        else {
-            #expect(Bool(false))
-            return
-        }
-        #expect(CGDisplayIsBuiltin(displayOneID) == 0)
-        #expect(CGDisplayIsBuiltin(displayTwoID) == 0)
-        guard CGDisplayIsBuiltin(displayOneID) == 0, CGDisplayIsBuiltin(displayTwoID) == 0 else {
-            return
-        }
+        let screenOne = displays[0].screen
+        let screenTwo = displays[1].screen
+        let displayOneID = displays[0].id
+        let displayTwoID = displays[1].id
 
         let appActivated = runAppleScript("tell application id \"\(bundleID)\" to activate")
         #expect(appActivated)
@@ -118,8 +109,8 @@ struct RealAppScenarioTests {
             closeWindows(pid: appPID, elements: [firstWindow, secondWindow])
         }
 
-        let displayOneFrame = scenarioFrame(on: screens[0], offset: 0)
-        let displayTwoFrame = scenarioFrame(on: screens[1], offset: 0)
+        let displayOneFrame = scenarioFrame(on: screenOne, offset: 0)
+        let displayTwoFrame = scenarioFrame(on: screenTwo, offset: 0)
 
         let firstPlaced = setWindowFrame(element: firstWindow, frame: displayOneFrame)
         let secondPlaced = setWindowFrame(element: secondWindow, frame: displayTwoFrame)
@@ -153,7 +144,7 @@ struct RealAppScenarioTests {
 
         let movedToDisplayTwo = setWindowFrame(
             element: firstWindow,
-            frame: scenarioFrame(on: screens[1], offset: 1)
+            frame: scenarioFrame(on: screenTwo, offset: 1)
         )
         #expect(movedToDisplayTwo)
         guard movedToDisplayTwo else {
@@ -197,6 +188,147 @@ struct RealAppScenarioTests {
         pauseForVisualConfirmation(duration: 2.0)
     }
 
+    private func runFreeCADChildWindowScenario() {
+        let hasAXPermission = AXIsProcessTrusted()
+        #expect(hasAXPermission)
+        guard hasAXPermission else {
+            return
+        }
+
+        guard let displays = validatedTwoExternalDisplays() else {
+            return
+        }
+        let screenOne = displays[0].screen
+        let screenTwo = displays[1].screen
+        let displayOneID = displays[0].id
+        let displayTwoID = displays[1].id
+
+        guard let activation = activateFirstAvailableApp(bundleIDs: freeCADBundleIDs) else {
+            #expect(Bool(false))
+            return
+        }
+
+        let bundleID = activation.bundleID
+        let appPID = activation.pid
+        let settableReady = waitUntil(timeout: 15.0) {
+            self.liveSettableWindows(pid: appPID).count >= 2
+        }
+        #expect(settableReady)
+        guard settableReady else {
+            return
+        }
+        pauseForVisualConfirmation(duration: 1.0)
+
+        guard
+            let tracked = selectFreeCADScenarioWindows(pid: appPID),
+            tracked.children.count == 4
+        else {
+            #expect(Bool(false))
+            return
+        }
+
+        let mainWindow = tracked.main.element
+        let childWindows = tracked.children.map(\.element)
+        let trackedElements = [mainWindow] + childWindows
+
+        let mainPlaced = setWindowFrame(
+            element: mainWindow, frame: scenarioFrame(on: screenOne, offset: 0))
+        #expect(mainPlaced)
+        let childrenPlaced = childWindows.enumerated().allSatisfy { index, window in
+            setWindowFrame(element: window, frame: childScenarioFrame(on: screenTwo, index: index))
+        }
+        #expect(childrenPlaced)
+        guard mainPlaced, childrenPlaced else {
+            return
+        }
+
+        let screenService = NSScreenCoordinateService()
+        let baselinePlacementSettled = waitUntil(timeout: 8.0) {
+            self.displayID(for: mainWindow, screenService: screenService) == displayOneID
+                && childWindows.allSatisfy { window in
+                    self.displayID(for: window, screenService: screenService) == displayTwoID
+                }
+        }
+        #expect(baselinePlacementSettled)
+        guard baselinePlacementSettled else {
+            return
+        }
+        pauseForVisualConfirmation(duration: 1.0)
+
+        let snapshotService = AXWindowSnapshotService(screenService: screenService)
+        let appSnapshots = snapshotService.capture().filter { snapshot in
+            snapshot.appPID == appPID || snapshot.appBundleID == bundleID
+        }
+        let baselineSnapshots = snapshotsForWindows(
+            windows: trackedElements,
+            appSnapshots: appSnapshots
+        )
+        #expect(baselineSnapshots.count == trackedElements.count)
+        guard baselineSnapshots.count == trackedElements.count else {
+            return
+        }
+
+        let baselineMainDisplayID = baselineSnapshots[0].screenDisplayID
+        #expect(baselineMainDisplayID == displayOneID)
+        for childSnapshot in baselineSnapshots.dropFirst() {
+            #expect(childSnapshot.screenDisplayID == displayTwoID)
+        }
+        guard baselineMainDisplayID == displayOneID else {
+            return
+        }
+
+        let movedMain = setWindowFrame(
+            element: mainWindow, frame: scenarioFrame(on: screenTwo, offset: 1))
+        #expect(movedMain)
+        let movedChildren = childWindows.enumerated().allSatisfy { index, window in
+            setWindowFrame(element: window, frame: childScenarioFrame(on: screenOne, index: index))
+        }
+        #expect(movedChildren)
+        guard movedMain, movedChildren else {
+            return
+        }
+
+        let perturbationSettled = waitUntil(timeout: 6.0) {
+            self.displayID(for: mainWindow, screenService: screenService) == displayTwoID
+                && childWindows.allSatisfy { window in
+                    self.displayID(for: window, screenService: screenService) == displayOneID
+                }
+        }
+        #expect(perturbationSettled)
+        guard perturbationSettled else {
+            return
+        }
+        pauseForVisualConfirmation(duration: 1.0)
+
+        let restoreResult = snapshotService.restore(from: baselineSnapshots)
+        #expect(restoreResult.recoverableFailureCount == 0)
+        #expect(restoreResult.isComplete)
+        guard restoreResult.recoverableFailureCount == 0 else {
+            return
+        }
+
+        let expectedDisplays = baselineSnapshots.map(\.screenDisplayID)
+        #expect(expectedDisplays.allSatisfy { $0 != nil })
+        guard expectedDisplays.allSatisfy({ $0 != nil }) else {
+            return
+        }
+
+        let restored = waitUntil(timeout: 8.0) {
+            zip(trackedElements, expectedDisplays).allSatisfy { element, expected in
+                guard let expected else {
+                    return false
+                }
+                return self.displayID(for: element, screenService: screenService) == expected
+            }
+        }
+        #expect(restored)
+        guard restored else {
+            return
+        }
+
+        pauseForVisualConfirmation(duration: 2.0)
+    }
+
     private func scenarioFrame(on screen: NSScreen, offset: Int) -> CGRect {
         let visible = screen.visibleFrame
         let width = min(max(420, visible.width * 0.55), visible.width - 80)
@@ -204,6 +336,124 @@ struct RealAppScenarioTests {
         let x = visible.minX + 40 + (CGFloat(offset) * 35)
         let y = visible.minY + 60 + (CGFloat(offset) * 30)
         return CGRect(x: x, y: y, width: width, height: height)
+    }
+
+    private func childScenarioFrame(on screen: NSScreen, index: Int) -> CGRect {
+        let visible = screen.visibleFrame
+        let width = min(max(320, visible.width * 0.34), visible.width - 80)
+        let height = min(max(220, visible.height * 0.24), visible.height - 80)
+        let x = visible.maxX - width - 40
+        let yStep = height + 18
+        let maxY = visible.maxY - height - 40
+        let y = min(visible.minY + 40 + (CGFloat(index) * yStep), maxY)
+        return CGRect(x: x, y: y, width: width, height: height)
+    }
+
+    private func validatedTwoExternalDisplays() -> [(screen: NSScreen, id: UInt32)]? {
+        let screens = NSScreen.screens.sorted { lhs, rhs in
+            if lhs.frame.minX != rhs.frame.minX {
+                return lhs.frame.minX < rhs.frame.minX
+            }
+            return lhs.frame.minY < rhs.frame.minY
+        }
+        #expect(screens.count == 2)
+        guard screens.count == 2 else {
+            return nil
+        }
+
+        guard
+            let displayOneID = displayID(for: screens[0]),
+            let displayTwoID = displayID(for: screens[1])
+        else {
+            #expect(Bool(false))
+            return nil
+        }
+        #expect(CGDisplayIsBuiltin(displayOneID) == 0)
+        #expect(CGDisplayIsBuiltin(displayTwoID) == 0)
+        guard CGDisplayIsBuiltin(displayOneID) == 0, CGDisplayIsBuiltin(displayTwoID) == 0 else {
+            return nil
+        }
+
+        return [(screens[0], displayOneID), (screens[1], displayTwoID)]
+    }
+
+    private func activateFirstAvailableApp(bundleIDs: [String]) -> (bundleID: String, pid: Int32)? {
+        for bundleID in bundleIDs {
+            guard runAppleScript("tell application id \"\(bundleID)\" to activate") else {
+                continue
+            }
+            let pidReady = waitUntil(timeout: 10.0) {
+                self.runningAppPID(bundleID: bundleID) != nil
+            }
+            guard pidReady, let appPID = runningAppPID(bundleID: bundleID) else {
+                continue
+            }
+            return (bundleID: bundleID, pid: appPID)
+        }
+        return nil
+    }
+
+    private func liveSettableWindows(pid: Int32) -> [LiveWindow] {
+        liveWindows(pid: pid).filter { isFrameSettable($0.element) }
+    }
+
+    private func selectFreeCADScenarioWindows(pid: Int32) -> (
+        main: LiveWindow, children: [LiveWindow]
+    )? {
+        let settable = liveSettableWindows(pid: pid)
+        guard settable.count >= 5 else {
+            return nil
+        }
+
+        let mainWindow = settable.max(by: { windowArea($0.frame) < windowArea($1.frame) })
+        guard let mainWindow else {
+            return nil
+        }
+
+        let childCandidates = settable.filter { !CFEqual($0.element, mainWindow.element) }
+        let rankedChildren = childCandidates.sorted { lhs, rhs in
+            let lhsScore = freeCADChildWindowScore(lhs)
+            let rhsScore = freeCADChildWindowScore(rhs)
+            if lhsScore != rhsScore {
+                return lhsScore > rhsScore
+            }
+
+            let lhsArea = windowArea(lhs.frame)
+            let rhsArea = windowArea(rhs.frame)
+            if lhsArea != rhsArea {
+                return lhsArea > rhsArea
+            }
+
+            if lhs.number != rhs.number {
+                return (lhs.number ?? Int.max) < (rhs.number ?? Int.max)
+            }
+
+            if lhs.frame.minX != rhs.frame.minX {
+                return lhs.frame.minX < rhs.frame.minX
+            }
+            return lhs.frame.minY < rhs.frame.minY
+        }
+
+        guard rankedChildren.count >= 4 else {
+            return nil
+        }
+        return (main: mainWindow, children: Array(rankedChildren.prefix(4)))
+    }
+
+    private func freeCADChildWindowScore(_ window: LiveWindow) -> Int {
+        guard let title = window.title?.lowercased() else {
+            return 0
+        }
+        let keywords = ["task", "model", "report", "python", "console", "tree", "property"]
+        return keywords.reduce(into: 0) { score, keyword in
+            if title.contains(keyword) {
+                score += 1
+            }
+        }
+    }
+
+    private func windowArea(_ frame: CGRect) -> CGFloat {
+        frame.width * frame.height
     }
 
     private func runningAppPID(bundleID: String) -> Int32? {
@@ -285,6 +535,10 @@ struct RealAppScenarioTests {
             return LiveWindow(
                 element: window,
                 number: windowNumber(of: window),
+                title: stringAttribute(window: window, attribute: kAXTitleAttribute as CFString),
+                role: stringAttribute(window: window, attribute: kAXRoleAttribute as CFString),
+                subrole: stringAttribute(
+                    window: window, attribute: kAXSubroleAttribute as CFString),
                 frame: frame
             )
         }
@@ -309,6 +563,14 @@ struct RealAppScenarioTests {
             return nil
         }
         return (value as? NSNumber)?.intValue
+    }
+
+    private func stringAttribute(window: AXUIElement, attribute: CFString) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, attribute, &value) == .success else {
+            return nil
+        }
+        return value as? String
     }
 
     private func frameForWindow(_ window: AXUIElement) -> CGRect? {
@@ -465,6 +727,9 @@ struct RealAppScenarioTests {
     private struct LiveWindow {
         let element: AXUIElement
         let number: Int?
+        let title: String?
+        let role: String?
+        let subrole: String?
         let frame: CGRect
     }
 }
