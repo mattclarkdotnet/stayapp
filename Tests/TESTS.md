@@ -25,12 +25,43 @@ To run only the real-app scenarios:
 swift test --filter StayIntegrationTests.RealAppScenarioTests
 ```
 
+Wake-cycle scenarios (with real sleep/wake) use the runner executable:
+
+```bash
+# Finder scenario
+swift run WakeCycleScenarios prepare finder
+# ...machine sleeps, wakes, and you log in...
+swift run WakeCycleScenarios verify finder
+
+# TextEdit scenario
+swift run WakeCycleScenarios prepare app
+# ...machine sleeps, wakes, and you log in...
+swift run WakeCycleScenarios verify app
+```
+
+Required order for wake-cycle scenarios:
+
+1. Run `prepare` for the scenario (`finder` or `app`).
+2. Let the machine complete the sleep/wake cycle.
+3. Log in after wake.
+4. Run `verify` for the same scenario.
+
+Optional passive check:
+
+```bash
+swift run WakeCycleScenarios verify finder --check-only
+swift run WakeCycleScenarios verify app --check-only
+```
+
 ## Real-App Scenario Prerequisites
 
 - Exactly two external displays must be active (no built-in display).
 - Accessibility permission for Stay/test process must be granted.
 - Finder and TextEdit must be launchable.
 - Running these tests will visibly move windows across screens.
+- For wake-cycle scenarios, run `prepare`, let the machine sleep/wake, log in, then run `verify`.
+- `verify` perturbs one tracked window first, then restores and validates display and frame placement.
+- Use `verify --check-only` when you only want passive post-wake validation.
 
 ## Test Design Pattern
 
@@ -67,6 +98,8 @@ Scenarios currently automated from `SCENARIOS.md`:
 
 - two Finder windows, one per screen
 - two non-Finder app windows (TextEdit), one per screen
+- full wake/sleep Finder two-window scenario (`WakeCycleScenarios prepare/verify finder`)
+- full wake/sleep app two-window scenario (`WakeCycleScenarios prepare/verify app`)
 
 ## Adding New Test Cases
 

@@ -7,7 +7,8 @@ let package = Package(
         .macOS("26.0")
     ],
     products: [
-        .executable(name: "Stay", targets: ["Stay"])
+        .executable(name: "Stay", targets: ["Stay"]),
+        .executable(name: "WakeCycleScenarios", targets: ["WakeCycleScenarios"]),
     ],
     targets: [
         .target(
@@ -16,6 +17,9 @@ let package = Package(
         .executableTarget(
             name: "Stay",
             dependencies: ["StayCore"]
+        ),
+        .executableTarget(
+            name: "WakeCycleScenarios"
         ),
         .testTarget(
             name: "StayCoreTests",
