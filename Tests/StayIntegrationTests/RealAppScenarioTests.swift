@@ -11,6 +11,9 @@ import Testing
 @MainActor
 struct RealAppScenarioTests {
     private let freeCADBundleIDs = ["org.freecad.FreeCAD", "org.freecadweb.FreeCAD"]
+    private let kicadMainBundleIDs = ["org.kicad.kicad", "org.kicad.kicad-nightly"]
+    private let kicadPCBBundleIDs = ["org.kicad.pcbnew", "org.kicad.pcbnew-nightly"]
+    private let kicadSchematicBundleIDs = ["org.kicad.eeschema", "org.kicad.eeschema-nightly"]
 
     private enum FreeCADChildPanel: String, CaseIterable {
         case tasks = "tasks"
@@ -63,6 +66,11 @@ struct RealAppScenarioTests {
     @Test("Scenario 3: FreeCAD main window and child windows restore to original screens")
     func freeCADChildWindowsScenario() {
         runFreeCADChildWindowScenario()
+    }
+
+    @Test("Scenario 4: KiCad main+PCB on primary and schematic on secondary restore correctly")
+    func kicadMainPcbPrimarySchematicSecondaryScenario() {
+        runKiCadMainPcbPrimarySchematicSecondaryScenario()
     }
 
     private func runTwoWindowScenario(bundleID: String, createWindowsScript: String) {
@@ -357,6 +365,164 @@ struct RealAppScenarioTests {
         pauseForVisualConfirmation(duration: 2.0)
     }
 
+    private func runKiCadMainPcbPrimarySchematicSecondaryScenario() {
+        let hasAXPermission = AXIsProcessTrusted()
+        #expect(hasAXPermission)
+        guard hasAXPermission else {
+            return
+        }
+
+        guard let displays = validatedTwoExternalDisplays() else {
+            return
+        }
+        let primaryScreen = displays[0].screen
+        let secondaryScreen = displays[1].screen
+        let primaryDisplayID = displays[0].id
+        let secondaryDisplayID = displays[1].id
+
+        guard
+            let kicadMain = activateFirstAvailableApp(bundleIDs: kicadMainBundleIDs),
+            let pcbEditor = activateFirstAvailableApp(bundleIDs: kicadPCBBundleIDs),
+            let schematicEditor = activateFirstAvailableApp(bundleIDs: kicadSchematicBundleIDs)
+        else {
+            #expect(Bool(false))
+            return
+        }
+
+        let kicadMainReady = waitUntil(timeout: 15.0) {
+            self.primarySettableWindow(pid: kicadMain.pid) != nil
+        }
+        let pcbEditorReady = waitUntil(timeout: 15.0) {
+            self.primarySettableWindow(pid: pcbEditor.pid) != nil
+        }
+        let schematicEditorReady = waitUntil(timeout: 15.0) {
+            self.primarySettableWindow(pid: schematicEditor.pid) != nil
+        }
+        #expect(kicadMainReady)
+        #expect(pcbEditorReady)
+        #expect(schematicEditorReady)
+        guard kicadMainReady, pcbEditorReady, schematicEditorReady else {
+            return
+        }
+        pauseForVisualConfirmation(duration: 1.0)
+
+        guard
+            let mainWindow = primarySettableWindow(pid: kicadMain.pid)?.element,
+            let pcbWindow = primarySettableWindow(pid: pcbEditor.pid)?.element,
+            let schematicWindow = primarySettableWindow(pid: schematicEditor.pid)?.element
+        else {
+            #expect(Bool(false))
+            return
+        }
+
+        let mainPlaced = moveMainWindowToScreen(
+            element: mainWindow, screen: primaryScreen, offset: 0)
+        let pcbPlaced = moveMainWindowToScreen(element: pcbWindow, screen: primaryScreen, offset: 1)
+        let schematicPlaced = moveMainWindowToScreen(
+            element: schematicWindow,
+            screen: secondaryScreen,
+            offset: 0
+        )
+        #expect(mainPlaced)
+        #expect(pcbPlaced)
+        #expect(schematicPlaced)
+        guard mainPlaced, pcbPlaced, schematicPlaced else {
+            return
+        }
+
+        let screenService = NSScreenCoordinateService()
+        let baselinePlacementSettled = waitUntil(timeout: 8.0) {
+            self.displayID(for: mainWindow, screenService: screenService) == primaryDisplayID
+                && self.displayID(for: pcbWindow, screenService: screenService) == primaryDisplayID
+                && self.displayID(for: schematicWindow, screenService: screenService)
+                    == secondaryDisplayID
+        }
+        #expect(baselinePlacementSettled)
+        guard baselinePlacementSettled else {
+            return
+        }
+        pauseForVisualConfirmation(duration: 1.0)
+
+        let snapshotService = AXWindowSnapshotService(screenService: screenService)
+        let trackedElements = [mainWindow, pcbWindow, schematicWindow]
+        let trackedPIDs = Set([kicadMain.pid, pcbEditor.pid, schematicEditor.pid])
+        let trackedBundleIDs = Set([
+            kicadMain.bundleID, pcbEditor.bundleID, schematicEditor.bundleID,
+        ])
+        let appSnapshots = snapshotService.capture().filter { snapshot in
+            trackedPIDs.contains(snapshot.appPID)
+                || (snapshot.appBundleID.map { trackedBundleIDs.contains($0) } ?? false)
+        }
+        let baselineSnapshots = snapshotsForWindows(
+            windows: trackedElements,
+            appSnapshots: appSnapshots
+        )
+        #expect(baselineSnapshots.count == trackedElements.count)
+        guard baselineSnapshots.count == trackedElements.count else {
+            return
+        }
+        #expect(baselineSnapshots[0].screenDisplayID == primaryDisplayID)
+        #expect(baselineSnapshots[1].screenDisplayID == primaryDisplayID)
+        #expect(baselineSnapshots[2].screenDisplayID == secondaryDisplayID)
+
+        let movedMain = moveMainWindowToScreen(
+            element: mainWindow, screen: secondaryScreen, offset: 2)
+        let movedPCB = moveMainWindowToScreen(
+            element: pcbWindow, screen: secondaryScreen, offset: 3)
+        let movedSchematic = moveMainWindowToScreen(
+            element: schematicWindow,
+            screen: primaryScreen,
+            offset: 2
+        )
+        #expect(movedMain)
+        #expect(movedPCB)
+        #expect(movedSchematic)
+        guard movedMain, movedPCB, movedSchematic else {
+            return
+        }
+
+        let perturbationSettled = waitUntil(timeout: 8.0) {
+            self.displayID(for: mainWindow, screenService: screenService) == secondaryDisplayID
+                && self.displayID(for: pcbWindow, screenService: screenService)
+                    == secondaryDisplayID
+                && self.displayID(for: schematicWindow, screenService: screenService)
+                    == primaryDisplayID
+        }
+        #expect(perturbationSettled)
+        guard perturbationSettled else {
+            return
+        }
+        pauseForVisualConfirmation(duration: 1.0)
+
+        let restoreResult = snapshotService.restore(from: baselineSnapshots)
+        #expect(restoreResult.recoverableFailureCount == 0)
+        #expect(restoreResult.isComplete)
+        guard restoreResult.recoverableFailureCount == 0 else {
+            return
+        }
+
+        let expectedDisplays = baselineSnapshots.map(\.screenDisplayID)
+        #expect(expectedDisplays.allSatisfy { $0 != nil })
+        guard expectedDisplays.allSatisfy({ $0 != nil }) else {
+            return
+        }
+
+        let restored = waitUntil(timeout: 10.0) {
+            zip(trackedElements, expectedDisplays).allSatisfy { element, expected in
+                guard let expected else {
+                    return false
+                }
+                return self.displayID(for: element, screenService: screenService) == expected
+            }
+        }
+        #expect(restored)
+        guard restored else {
+            return
+        }
+
+        pauseForVisualConfirmation(duration: 2.0)
+    }
+
     private func scenarioFrame(on screen: NSScreen, offset: Int) -> CGRect {
         let visible = screen.visibleFrame
         let width = min(max(420, visible.width * 0.55), visible.width - 80)
@@ -506,6 +672,10 @@ struct RealAppScenarioTests {
 
     private func liveSettableWindows(pid: Int32) -> [LiveWindow] {
         liveWindows(pid: pid).filter { isFrameSettable($0.element) }
+    }
+
+    private func primarySettableWindow(pid: Int32) -> LiveWindow? {
+        liveSettableWindows(pid: pid).max(by: { windowArea($0.frame) < windowArea($1.frame) })
     }
 
     private func selectFreeCADScenarioWindows(pid: Int32) -> (

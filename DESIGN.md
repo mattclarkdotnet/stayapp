@@ -218,12 +218,13 @@ Real-app no-sleep integration tests in `StayIntegrationTests.RealAppScenarioTest
 - two Finder windows across two displays
 - two TextEdit windows across two displays
 - FreeCAD main window + child windows (tasks/model/report/python console) across two displays
+- KiCad main + PCB editor on primary display, schematic editor on secondary display
 
 Wake-cycle integration uses the `WakeCycleScenarios` executable:
 
-- `prepare finder|app|freecad`: create/position real windows, persist state,
+- `prepare finder|app|freecad|kicad`: create/position real windows, persist state,
   optionally sleep the machine
-- `verify finder|app|freecad`: wait for display readiness, perturb one tracked window,
+- `verify finder|app|freecad|kicad`: wait for display readiness, perturb one tracked window,
   run restore attempts, then verify final display+frame alignment
 - `verify ... --check-only`: passive post-wake validation without perturb/restore
 

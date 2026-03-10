@@ -42,11 +42,16 @@ swift run WakeCycleScenarios verify app
 swift run WakeCycleScenarios prepare freecad
 # ...machine sleeps, wakes, and you log in...
 swift run WakeCycleScenarios verify freecad
+
+# KiCad scenario
+swift run WakeCycleScenarios prepare kicad
+# ...machine sleeps, wakes, and you log in...
+swift run WakeCycleScenarios verify kicad
 ```
 
 Required order for wake-cycle scenarios:
 
-1. Run `prepare` for the scenario (`finder`, `app`, or `freecad`).
+1. Run `prepare` for the scenario (`finder`, `app`, `freecad`, or `kicad`).
 2. Let the machine complete the sleep/wake cycle.
 3. Log in after wake.
 4. Run `verify` for the same scenario.
@@ -57,6 +62,7 @@ Optional passive check:
 swift run WakeCycleScenarios verify finder --check-only
 swift run WakeCycleScenarios verify app --check-only
 swift run WakeCycleScenarios verify freecad --check-only
+swift run WakeCycleScenarios verify kicad --check-only
 ```
 
 ## Real-App Scenario Prerequisites
@@ -64,8 +70,9 @@ swift run WakeCycleScenarios verify freecad --check-only
 - Exactly two external displays must be active (no built-in display).
 - In scenario tests, `screen 1` means the primary macOS display (menu bar display).
 - Accessibility permission for Stay/test process must be granted.
-- Finder, TextEdit, and FreeCAD must be launchable.
+- Finder, TextEdit, FreeCAD, and KiCad must be launchable.
 - FreeCAD child windows used in Scenario 1.3 must be visible as independent AX windows.
+- KiCad Scenario 1.4 requires visible windows for the KiCad app, PCB editor, and schematic editor.
 - Scenario 1.3 explicitly repositions FreeCAD windows before capture:
   main window on screen 1, child windows (`tasks`, `model`, `report view`, `python console`) on screen 2.
 - Scenario 1.3 uses position-only moves for FreeCAD windows so tool-window sizes are preserved.
@@ -110,9 +117,11 @@ Scenarios currently automated from `SCENARIOS.md`:
 - two Finder windows, one per screen
 - two non-Finder app windows (TextEdit), one per screen
 - FreeCAD main window + child windows (tasks/model/report/python console) across two screens
+- KiCad main + PCB editor on primary screen, schematic editor on secondary screen
 - full wake/sleep Finder two-window scenario (`WakeCycleScenarios prepare/verify finder`)
 - full wake/sleep app two-window scenario (`WakeCycleScenarios prepare/verify app`)
 - full wake/sleep FreeCAD main+child-window scenario (`WakeCycleScenarios prepare/verify freecad`)
+- full wake/sleep KiCad main+PCB+schematic scenario (`WakeCycleScenarios prepare/verify kicad`)
 
 ## Adding New Test Cases
 

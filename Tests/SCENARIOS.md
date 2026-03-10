@@ -37,6 +37,20 @@ And the user moves the child windows to `primary_screen`
 And the user restores the window layout
 Then the main FreeCAD window should be restored on `primary_screen` and the child windows should be restored on `secondary_screen`
 
+### Scenario 1.4: KiCad split editors
+Given that the user has two external screens (`primary_screen` and `secondary_screen`)
+And the user's computer has no internal screen
+And KiCad is launched
+And the main KiCad window is on `primary_screen`
+And the PCB editor window is on `primary_screen`
+And the schematic editor window is on `secondary_screen`
+When the user saves the window layout
+And the user moves all three windows to the opposite screen from their saved screen
+And the user restores the window layout
+Then the main KiCad window should be restored on `primary_screen`
+And the PCB editor window should be restored on `primary_screen`
+And the schematic editor window should be restored on `secondary_screen`
+
 ## 2. Scenarios with a full sleep/wake cycle:
 ### Scenario 2.1: 2 finder windows
 Given that the user has two external screens (`screen_1` and `screen_2`)
@@ -73,3 +87,19 @@ And the user waits until both screens have come out of power standby
 And the user logs in
 Then the main FreeCAD window should be restored on `primary_screen`
 And the child windows should be restored on `secondary_screen`
+
+### Scenario 2.4: KiCad split editors
+Given that the user has two external screens (`primary_screen` and `secondary_screen`)
+Given that the user's computer has no internal screen
+Given that KiCad is launched
+Given that the main KiCad window is on `primary_screen`
+Given that the PCB editor window is on `primary_screen`
+Given that the schematic editor window is on `secondary_screen`
+When the user sleeps the computer
+And the user waits until both screens have gone into power standby
+And the user wakes the computer
+And the user waits until both screens have come out of power standby
+And the user logs in
+Then the main KiCad window should be restored on `primary_screen`
+And the PCB editor window should be restored on `primary_screen`
+And the schematic editor window should be restored on `secondary_screen`

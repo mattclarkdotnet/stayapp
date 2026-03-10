@@ -14,6 +14,7 @@ struct WakeCycleScenarioRunner {
         case finder
         case app
         case freecad
+        case kicad
 
         var bundleID: String {
             candidateBundleIDs[0]
@@ -27,6 +28,8 @@ struct WakeCycleScenarioRunner {
                 return ["com.apple.TextEdit"]
             case .freecad:
                 return ["org.freecad.FreeCAD", "org.freecadweb.FreeCAD"]
+            case .kicad:
+                return ["org.kicad.kicad", "org.kicad.kicad-nightly"]
             }
         }
 
@@ -38,6 +41,8 @@ struct WakeCycleScenarioRunner {
                 return "TextEdit"
             case .freecad:
                 return "FreeCAD"
+            case .kicad:
+                return "KiCad"
             }
         }
     }
@@ -62,6 +67,9 @@ struct WakeCycleScenarioRunner {
         }
     }
 
+    private let kicadPCBBundleIDs = ["org.kicad.pcbnew", "org.kicad.pcbnew-nightly"]
+    private let kicadSchematicBundleIDs = ["org.kicad.eeschema", "org.kicad.eeschema-nightly"]
+
     struct CodableRect: Codable {
         let x: Double
         let y: Double
@@ -81,6 +89,7 @@ struct WakeCycleScenarioRunner {
     }
 
     struct TrackedWindow: Codable {
+        let appBundleID: String?
         let titleHint: String
         let expectedDisplayID: UInt32
         let expectedFrame: CodableRect
@@ -89,6 +98,7 @@ struct WakeCycleScenarioRunner {
     struct ScenarioState: Codable {
         let scenario: String
         let bundleID: String
+        let trackedBundleIDs: [String]?
         let preparedAt: Date
         let trackedWindows: [TrackedWindow]
         let createdPaths: [String]
@@ -103,6 +113,8 @@ struct WakeCycleScenarioRunner {
 
     struct LiveWindow {
         let element: AXUIElement
+        let appPID: Int32
+        let appBundleID: String?
         let number: Int?
         let title: String?
         let role: String?
@@ -157,8 +169,8 @@ struct WakeCycleScenarioRunner {
         print(
             """
             Usage:
-              swift run WakeCycleScenarios prepare <finder|app|freecad> [--no-sleep]
-              swift run WakeCycleScenarios verify <finder|app|freecad> [--check-only]
+              swift run WakeCycleScenarios prepare <finder|app|freecad|kicad> [--no-sleep]
+              swift run WakeCycleScenarios verify <finder|app|freecad|kicad> [--check-only]
 
             Notes:
               - Requires exactly two external displays and no built-in display.
@@ -186,6 +198,16 @@ struct WakeCycleScenarioRunner {
     private func prepare(scenario: Scenario, shouldSleep: Bool) throws {
         try ensurePrerequisites()
         let displays = try validatedExternalDisplays()
+
+        if scenario == .kicad {
+            try prepareKiCadScenario(
+                scenario: scenario,
+                displays: displays,
+                shouldSleep: shouldSleep
+            )
+            return
+        }
+
         let running = try ensureAppRunning(scenario: scenario)
         let pid = running.pid
 
@@ -256,14 +278,17 @@ struct WakeCycleScenarioRunner {
         let state = ScenarioState(
             scenario: scenario.rawValue,
             bundleID: running.bundleID,
+            trackedBundleIDs: [running.bundleID],
             preparedAt: Date(),
             trackedWindows: [
                 TrackedWindow(
+                    appBundleID: running.bundleID,
                     titleHint: titleOne,
                     expectedDisplayID: display1.id,
                     expectedFrame: CodableRect(frameOne)
                 ),
                 TrackedWindow(
+                    appBundleID: running.bundleID,
                     titleHint: titleTwo,
                     expectedDisplayID: display2.id,
                     expectedFrame: CodableRect(frameTwo)
@@ -358,6 +383,7 @@ struct WakeCycleScenarioRunner {
         let mainTitleHint = normalized(tracked.main.title) ?? "freecad"
         trackedWindows.append(
             TrackedWindow(
+                appBundleID: activeBundleID,
                 titleHint: mainTitleHint,
                 expectedDisplayID: primaryDisplay.id,
                 expectedFrame: CodableRect(mainFrame)
@@ -371,6 +397,7 @@ struct WakeCycleScenarioRunner {
             }
             trackedWindows.append(
                 TrackedWindow(
+                    appBundleID: activeBundleID,
                     titleHint: child.panel.rawValue,
                     expectedDisplayID: secondaryDisplay.id,
                     expectedFrame: CodableRect(frame)
@@ -381,6 +408,7 @@ struct WakeCycleScenarioRunner {
         let state = ScenarioState(
             scenario: scenario.rawValue,
             bundleID: activeBundleID,
+            trackedBundleIDs: [activeBundleID],
             preparedAt: Date(),
             trackedWindows: trackedWindows,
             createdPaths: []
@@ -406,12 +434,149 @@ struct WakeCycleScenarioRunner {
         }
     }
 
+    private func prepareKiCadScenario(
+        scenario: Scenario,
+        displays: [(screen: NSScreen, id: UInt32)],
+        shouldSleep: Bool
+    ) throws {
+        let (primaryDisplay, secondaryDisplay) = try primarySecondaryDisplays(from: displays)
+        let main = try ensureAppRunning(
+            bundleIDs: scenario.candidateBundleIDs, appName: "KiCad main")
+        let pcb = try ensureAppRunning(bundleIDs: kicadPCBBundleIDs, appName: "KiCad PCB editor")
+        let schematic = try ensureAppRunning(
+            bundleIDs: kicadSchematicBundleIDs,
+            appName: "KiCad schematic editor"
+        )
+
+        let ready = waitUntil(timeout: 20) {
+            self.primarySettableWindow(pid: main.pid) != nil
+                && self.primarySettableWindow(pid: pcb.pid) != nil
+                && self.primarySettableWindow(pid: schematic.pid) != nil
+        }
+        guard ready else {
+            throw RunnerError.failed("timed out waiting for KiCad main/PCB/schematic windows")
+        }
+
+        guard
+            let mainWindow = primarySettableWindow(pid: main.pid)?.element,
+            let pcbWindow = primarySettableWindow(pid: pcb.pid)?.element,
+            let schematicWindow = primarySettableWindow(pid: schematic.pid)?.element
+        else {
+            throw RunnerError.failed("could not identify KiCad main/PCB/schematic windows")
+        }
+
+        let mainPlaced = moveMainWindowToScreen(
+            element: mainWindow,
+            screen: primaryDisplay.screen,
+            offset: 0
+        )
+        let pcbPlaced = moveMainWindowToScreen(
+            element: pcbWindow,
+            screen: primaryDisplay.screen,
+            offset: 1
+        )
+        let schematicPlaced = moveMainWindowToScreen(
+            element: schematicWindow,
+            screen: secondaryDisplay.screen,
+            offset: 0
+        )
+        guard mainPlaced, pcbPlaced, schematicPlaced else {
+            throw RunnerError.failed("failed to place KiCad windows on target displays")
+        }
+
+        let settled = waitUntil(timeout: 10) {
+            guard
+                let mainFrame = self.frameForWindow(mainWindow),
+                let pcbFrame = self.frameForWindow(pcbWindow),
+                let schematicFrame = self.frameForWindow(schematicWindow)
+            else {
+                return false
+            }
+            return self.displayID(for: mainFrame) == primaryDisplay.id
+                && self.displayID(for: pcbFrame) == primaryDisplay.id
+                && self.displayID(for: schematicFrame) == secondaryDisplay.id
+        }
+        guard settled else {
+            throw RunnerError.failed("KiCad windows did not settle on expected displays")
+        }
+
+        guard
+            let mainFrame = frameForWindow(mainWindow),
+            let pcbFrame = frameForWindow(pcbWindow),
+            let schematicFrame = frameForWindow(schematicWindow)
+        else {
+            throw RunnerError.failed("could not read KiCad window frames after placement")
+        }
+
+        let mainTitleHint =
+            normalized(stringValue(of: mainWindow, attribute: kAXTitleAttribute as CFString))
+            ?? "kicad main"
+        let pcbTitleHint =
+            normalized(stringValue(of: pcbWindow, attribute: kAXTitleAttribute as CFString))
+            ?? "pcb editor"
+        let schematicTitleHint =
+            normalized(
+                stringValue(of: schematicWindow, attribute: kAXTitleAttribute as CFString)
+            ) ?? "schematic editor"
+
+        let state = ScenarioState(
+            scenario: scenario.rawValue,
+            bundleID: main.bundleID,
+            trackedBundleIDs: [main.bundleID, pcb.bundleID, schematic.bundleID],
+            preparedAt: Date(),
+            trackedWindows: [
+                TrackedWindow(
+                    appBundleID: main.bundleID,
+                    titleHint: mainTitleHint,
+                    expectedDisplayID: primaryDisplay.id,
+                    expectedFrame: CodableRect(mainFrame)
+                ),
+                TrackedWindow(
+                    appBundleID: pcb.bundleID,
+                    titleHint: pcbTitleHint,
+                    expectedDisplayID: primaryDisplay.id,
+                    expectedFrame: CodableRect(pcbFrame)
+                ),
+                TrackedWindow(
+                    appBundleID: schematic.bundleID,
+                    titleHint: schematicTitleHint,
+                    expectedDisplayID: secondaryDisplay.id,
+                    expectedFrame: CodableRect(schematicFrame)
+                ),
+            ],
+            createdPaths: []
+        )
+        try persistState(state, to: stateURL(for: scenario))
+
+        print("Prepared wake-cycle scenario '\(scenario.rawValue)' for KiCad.")
+        print("State file: \(stateURL(for: scenario).path)")
+        print("Main window (\(mainTitleHint)) -> primary display \(primaryDisplay.id)")
+        print("PCB window (\(pcbTitleHint)) -> primary display \(primaryDisplay.id)")
+        print(
+            "Schematic window (\(schematicTitleHint)) -> secondary display \(secondaryDisplay.id)")
+
+        if shouldSleep {
+            print("Sleeping machine in 3 seconds. After wake/login, run:")
+            print("  swift run WakeCycleScenarios verify \(scenario.rawValue)")
+            Thread.sleep(forTimeInterval: 3)
+            _ = runCommand("/usr/bin/pmset", ["sleepnow"])
+        } else {
+            print("Skipped sleep (--no-sleep). Manually sleep/wake, then run verify.")
+        }
+    }
+
     private func verify(scenario: Scenario, checkOnly: Bool) throws {
         try ensurePrerequisites()
         let displays = try validatedExternalDisplays()
         let state = try loadState(from: stateURL(for: scenario))
 
-        guard scenario.candidateBundleIDs.contains(state.bundleID) else {
+        guard
+            scenario.candidateBundleIDs.contains(state.bundleID)
+                || (state.trackedBundleIDs?.contains(where: {
+                    scenario.candidateBundleIDs.contains($0)
+                })
+                    == true)
+        else {
             throw RunnerError.failed(
                 "state bundle mismatch: expected one of \(scenario.candidateBundleIDs), found \(state.bundleID)"
             )
@@ -423,8 +588,9 @@ struct WakeCycleScenarioRunner {
             throw RunnerError.failed("required displays not ready after wake")
         }
 
-        let pid = try ensureAppRunning(bundleID: state.bundleID)
-        print("Verifying scenario '\(scenario.rawValue)' for app pid=\(pid)")
+        let bundleIDs = state.trackedBundleIDs ?? [state.bundleID]
+        let pids = try ensureAppsRunning(bundleIDs: bundleIDs)
+        print("Verifying scenario '\(scenario.rawValue)' for app pid(s)=\(pids)")
 
         if checkOnly {
             print("Check-only mode enabled; skipping perturbation and restore.")
@@ -433,7 +599,7 @@ struct WakeCycleScenarioRunner {
             let didPerturb = perturbOneWindowOffExpectedDisplay(
                 scenario: scenario,
                 trackedWindows: state.trackedWindows,
-                pid: pid,
+                pids: pids,
                 displays: displays
             )
             if didPerturb {
@@ -446,7 +612,7 @@ struct WakeCycleScenarioRunner {
             _ = restoreTrackedWindowsWithProgress(
                 scenario: scenario,
                 trackedWindows: state.trackedWindows,
-                pid: pid,
+                pids: pids,
                 timeout: 20
             )
         }
@@ -454,7 +620,7 @@ struct WakeCycleScenarioRunner {
         let passed = waitForVerificationWithProgress(
             scenario: scenario,
             trackedWindows: state.trackedWindows,
-            pid: pid,
+            pids: pids,
             timeout: 20
         )
 
@@ -465,7 +631,7 @@ struct WakeCycleScenarioRunner {
             details = verificationMismatches(
                 scenario: scenario,
                 trackedWindows: state.trackedWindows,
-                pid: pid
+                pids: pids
             )
         }
 
@@ -588,7 +754,38 @@ struct WakeCycleScenarioRunner {
         case .freecad:
             throw RunnerError.failed(
                 "FreeCAD scenario uses explicit window selection, not scripted creation")
+        case .kicad:
+            throw RunnerError.failed(
+                "KiCad scenario uses explicit window selection, not scripted creation")
         }
+    }
+
+    private func ensureAppsRunning(bundleIDs: [String]) throws -> [Int32] {
+        try bundleIDs.map { try ensureAppRunning(bundleID: $0) }
+    }
+
+    private func ensureAppRunning(bundleIDs: [String], appName: String) throws -> (
+        bundleID: String, pid: Int32
+    ) {
+        for bundleID in bundleIDs {
+            if let running = NSWorkspace.shared.runningApplications.first(where: {
+                !$0.isTerminated && $0.bundleIdentifier == bundleID
+            }) {
+                _ = running.activate()
+                return (bundleID: bundleID, pid: running.processIdentifier)
+            }
+        }
+
+        for bundleID in bundleIDs {
+            guard runAppleScript("tell application id \"\(bundleID)\" to activate") else {
+                continue
+            }
+            if let pid = waitForPID(bundleID: bundleID, timeout: 10) {
+                return (bundleID: bundleID, pid: pid)
+            }
+        }
+
+        throw RunnerError.failed("could not launch \(appName) using bundle IDs \(bundleIDs)")
     }
 
     private func ensureAppRunning(scenario: Scenario) throws -> (bundleID: String, pid: Int32) {
@@ -648,6 +845,9 @@ struct WakeCycleScenarioRunner {
     }
 
     private func liveWindows(pid: Int32) -> [LiveWindow] {
+        let appBundleID = NSWorkspace.shared.runningApplications.first(where: {
+            !$0.isTerminated && $0.processIdentifier == pid
+        })?.bundleIdentifier
         let appElement = AXUIElementCreateApplication(pid)
         var value: CFTypeRef?
         guard
@@ -673,6 +873,8 @@ struct WakeCycleScenarioRunner {
 
             return LiveWindow(
                 element: element,
+                appPID: pid,
+                appBundleID: appBundleID,
                 number: windowNumber(of: element),
                 title: title,
                 role: role,
@@ -680,6 +882,14 @@ struct WakeCycleScenarioRunner {
                 frame: frame
             )
         }
+    }
+
+    private func liveWindows(pids: [Int32]) -> [LiveWindow] {
+        pids.flatMap { liveWindows(pid: $0) }
+    }
+
+    private func primarySettableWindow(pid: Int32) -> LiveWindow? {
+        liveWindows(pid: pid).max(by: { windowArea($0.frame) < windowArea($1.frame) })
     }
 
     private func newWindows(current: [LiveWindow], baseline: [LiveWindow]) -> [LiveWindow] {
@@ -1038,9 +1248,9 @@ struct WakeCycleScenarioRunner {
     private func verifyTrackedWindows(
         scenario: Scenario,
         _ trackedWindows: [TrackedWindow],
-        pid: Int32
+        pids: [Int32]
     ) -> Bool {
-        let windows = liveWindows(pid: pid)
+        let windows = liveWindows(pids: pids)
         guard !windows.isEmpty else {
             return false
         }
@@ -1060,11 +1270,11 @@ struct WakeCycleScenarioRunner {
     private func verificationMismatches(
         scenario: Scenario,
         trackedWindows: [TrackedWindow],
-        pid: Int32
+        pids: [Int32]
     ) -> [String] {
-        let windows = liveWindows(pid: pid)
+        let windows = liveWindows(pids: pids)
         if windows.isEmpty {
-            return ["no live windows exposed for app pid=\(pid)"]
+            return ["no live windows exposed for app pids=\(pids)"]
         }
 
         var issues: [String] = []
@@ -1092,8 +1302,15 @@ struct WakeCycleScenarioRunner {
         -> LiveWindow?
     {
         let titleHint = tracked.titleHint
+        let scopedWindows: [LiveWindow]
+        if let bundleID = tracked.appBundleID {
+            let scoped = windows.filter { $0.appBundleID == bundleID }
+            scopedWindows = scoped.isEmpty ? windows : scoped
+        } else {
+            scopedWindows = windows
+        }
 
-        let byTitle = windows.first { window in
+        let byTitle = scopedWindows.first { window in
             normalized(window.title)?.contains(titleHint) == true
         }
         if let byTitle {
@@ -1101,7 +1318,7 @@ struct WakeCycleScenarioRunner {
         }
 
         let expectedFrame = tracked.expectedFrame.cgRect
-        return windows.min { lhs, rhs in
+        return scopedWindows.min { lhs, rhs in
             frameDistance(lhs.frame, expectedFrame) < frameDistance(rhs.frame, expectedFrame)
         }
     }
@@ -1184,7 +1401,7 @@ struct WakeCycleScenarioRunner {
     private func waitForVerificationWithProgress(
         scenario: Scenario,
         trackedWindows: [TrackedWindow],
-        pid: Int32,
+        pids: [Int32],
         timeout: TimeInterval
     ) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
@@ -1194,7 +1411,7 @@ struct WakeCycleScenarioRunner {
             let mismatches = verificationMismatches(
                 scenario: scenario,
                 trackedWindows: trackedWindows,
-                pid: pid
+                pids: pids
             )
             if mismatches.isEmpty {
                 print("Verification passed.")
@@ -1210,13 +1427,13 @@ struct WakeCycleScenarioRunner {
             sleepRunLoop(0.2)
         }
 
-        return verifyTrackedWindows(scenario: scenario, trackedWindows, pid: pid)
+        return verifyTrackedWindows(scenario: scenario, trackedWindows, pids: pids)
     }
 
     private func restoreTrackedWindowsWithProgress(
         scenario: Scenario,
         trackedWindows: [TrackedWindow],
-        pid: Int32,
+        pids: [Int32],
         timeout: TimeInterval
     ) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
@@ -1225,7 +1442,7 @@ struct WakeCycleScenarioRunner {
             let mismatches = verificationMismatches(
                 scenario: scenario,
                 trackedWindows: trackedWindows,
-                pid: pid
+                pids: pids
             )
             if mismatches.isEmpty {
                 print("Restore converged before timeout.")
@@ -1236,7 +1453,7 @@ struct WakeCycleScenarioRunner {
             print("Restore attempt \(attempt) (\(mismatches.count) mismatch(es))")
 
             let result = applyTrackedFrames(
-                scenario: scenario, trackedWindows: trackedWindows, pid: pid)
+                scenario: scenario, trackedWindows: trackedWindows, pids: pids)
             print(
                 "  moved=\(result.moved) aligned=\(result.aligned) failures=\(result.failures) unmatched=\(result.unmatched)"
             )
@@ -1245,7 +1462,7 @@ struct WakeCycleScenarioRunner {
                 let latest = verificationMismatches(
                     scenario: scenario,
                     trackedWindows: trackedWindows,
-                    pid: pid
+                    pids: pids
                 )
                 latest.forEach { print("  - \($0)") }
             }
@@ -1253,15 +1470,15 @@ struct WakeCycleScenarioRunner {
             sleepRunLoop(1.0)
         }
 
-        return verifyTrackedWindows(scenario: scenario, trackedWindows, pid: pid)
+        return verifyTrackedWindows(scenario: scenario, trackedWindows, pids: pids)
     }
 
     private func applyTrackedFrames(
         scenario: Scenario,
         trackedWindows: [TrackedWindow],
-        pid: Int32
+        pids: [Int32]
     ) -> (moved: Int, aligned: Int, failures: Int, unmatched: Int) {
-        let windows = liveWindows(pid: pid)
+        let windows = liveWindows(pids: pids)
         let assignments = assignLiveWindows(trackedWindows, to: windows)
         var moved = 0
         var aligned = 0
@@ -1316,10 +1533,10 @@ struct WakeCycleScenarioRunner {
     private func perturbOneWindowOffExpectedDisplay(
         scenario: Scenario,
         trackedWindows: [TrackedWindow],
-        pid: Int32,
+        pids: [Int32],
         displays: [(screen: NSScreen, id: UInt32)]
     ) -> Bool {
-        let windows = liveWindows(pid: pid)
+        let windows = liveWindows(pids: pids)
         let assignments = assignLiveWindows(trackedWindows, to: windows)
         guard let chosen = assignments.first else {
             return false
@@ -1380,11 +1597,19 @@ struct WakeCycleScenarioRunner {
             return nil
         }
 
-        let titleMatches = candidates.filter { index in
+        let appScopedCandidates: [Int]
+        if let bundleID = tracked.appBundleID {
+            let scoped = candidates.filter { windows[$0].appBundleID == bundleID }
+            appScopedCandidates = scoped.isEmpty ? candidates : scoped
+        } else {
+            appScopedCandidates = candidates
+        }
+
+        let titleMatches = appScopedCandidates.filter { index in
             normalized(windows[index].title)?.contains(tracked.titleHint) == true
         }
 
-        let pool = titleMatches.isEmpty ? candidates : titleMatches
+        let pool = titleMatches.isEmpty ? appScopedCandidates : titleMatches
         let expectedFrame = tracked.expectedFrame.cgRect
         return pool.min { lhs, rhs in
             frameDistance(windows[lhs].frame, expectedFrame)
@@ -1404,7 +1629,7 @@ struct WakeCycleScenarioRunner {
         -> CGRect
     {
         let base = scenarioFrame(on: screen, offset: 2)
-        if scenario == .finder || scenario == .freecad {
+        if scenario == .finder || scenario == .freecad || scenario == .kicad {
             return CGRect(
                 x: base.minX,
                 y: base.minY,
@@ -1416,6 +1641,9 @@ struct WakeCycleScenarioRunner {
     }
 
     private func shouldPreserveSizeOnRestore(scenario: Scenario, tracked: TrackedWindow) -> Bool {
+        if scenario == .kicad {
+            return true
+        }
         guard scenario == .freecad else {
             return false
         }
@@ -1474,6 +1702,8 @@ struct WakeCycleScenarioRunner {
         case .app:
             return (position: 4, size: 6)
         case .freecad:
+            return (position: 8, size: 8)
+        case .kicad:
             return (position: 8, size: 8)
         }
     }
