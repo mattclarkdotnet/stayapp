@@ -9,6 +9,7 @@ import StayCore
 // after wake, while tolerating title/index drift between capture and restore.
 final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRestoring {
     private let logger = Logger(subsystem: "com.stay.app", category: "AXWindowSnapshotService")
+    private static let finderBundleID = "com.apple.finder"
     private let workspace: NSWorkspace
     private let screenService: ScreenCoordinateServicing
 
@@ -38,7 +39,17 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
 
         for app in applications {
             let appElement = AXUIElementCreateApplication(app.processIdentifier)
-            let windows = windowsForAppElement(appElement)
+            var windows = windowsForAppElement(appElement)
+            let isFinder = isFinderBundleID(app.bundleIdentifier)
+            if isFinder {
+                // Finder sometimes omits window-level entries from kAXWindows while
+                // exposing them via child traversal.
+                let discoveredFinderWindows = discoverWindowLikeChildren(
+                    from: appElement, maxDepth: 3)
+                for discovered in discoveredFinderWindows {
+                    appendUnique(discovered, to: &windows)
+                }
+            }
             var appSnapshots: [WindowSnapshot] = []
             appSnapshots.reserveCapacity(windows.count)
 
@@ -51,10 +62,24 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                     continue
                 }
 
+                let windowTitle = stringValue(of: window, attribute: kAXTitleAttribute as CFString)
+                let windowRole = stringValue(of: window, attribute: kAXRoleAttribute as CFString)
+                let windowSubrole = stringValue(
+                    of: window, attribute: kAXSubroleAttribute as CFString)
+                if shouldSkipSnapshotWindow(
+                    appBundleID: app.bundleIdentifier,
+                    title: windowTitle,
+                    role: windowRole,
+                    subrole: windowSubrole,
+                    frame: frame
+                ) {
+                    continue
+                }
+
                 let displayID = screenService.displayID(for: frame)
                 if displayID == nil {
                     logger.debug(
-                        "Captured window without display ID (pid=\(app.processIdentifier, privacy: .public) title=\(String(describing: self.stringValue(of: window, attribute: kAXTitleAttribute as CFString)), privacy: .public))"
+                        "Captured window without display ID (pid=\(app.processIdentifier, privacy: .public) title=\(String(describing: windowTitle), privacy: .public))"
                     )
                 }
 
@@ -62,11 +87,10 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                     appPID: app.processIdentifier,
                     appBundleID: app.bundleIdentifier,
                     appName: app.localizedName ?? "Unknown",
-                    windowTitle: stringValue(of: window, attribute: kAXTitleAttribute as CFString),
+                    windowTitle: windowTitle,
                     windowNumber: windowNumber(of: window),
-                    windowRole: stringValue(of: window, attribute: kAXRoleAttribute as CFString),
-                    windowSubrole: stringValue(
-                        of: window, attribute: kAXSubroleAttribute as CFString),
+                    windowRole: windowRole,
+                    windowSubrole: windowSubrole,
                     windowIndex: index,
                     frame: CodableRect(frame),
                     screenDisplayID: displayID
@@ -95,16 +119,50 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
             }
 
             let hasLayeredFallbackWindows = fallbackWindows.contains(where: { $0.layer > 0 })
-            let hasAllWindowListCountAdvantage =
-                fallbackSource == "all-window-list" && fallbackWindows.count > appSnapshots.count
+            let isAXEmptyAllWindowListFallback =
+                appSnapshots.isEmpty && fallbackSource == "all-window-list"
+            let finderHasNonWindowRoleSnapshots = appSnapshots.contains { snapshot in
+                guard let role = normalizedString(snapshot.windowRole) else {
+                    return false
+                }
+                return role != normalizedString(kAXWindowRole as String)
+            }
             let shouldMergeFallbackWindows =
-                appSnapshots.isEmpty || hasLayeredFallbackWindows || hasAllWindowListCountAdvantage
+                if isFinder {
+                    // Finder normally prefers AX-only capture. If AX includes
+                    // non-window pseudo surfaces, treat capture as incomplete and
+                    // merge fallback entries to recover missing real windows.
+                    appSnapshots.isEmpty || finderHasNonWindowRoleSnapshots
+                } else {
+                    if appSnapshots.isEmpty {
+                        if fallbackSource == "all-window-list" {
+                            // Generic safeguard: when AX is empty and only the full
+                            // window list has candidates, require non-zero-layer
+                            // evidence before trusting them as real open windows.
+                            hasLayeredFallbackWindows
+                        } else {
+                            true
+                        }
+                    } else {
+                        hasLayeredFallbackWindows
+                    }
+                }
 
             if !fallbackWindows.isEmpty, shouldMergeFallbackWindows {
                 var knownFrameKeys = Set(appSnapshots.map(snapshotFrameIdentityKey))
                 var appendedFallbackCount = 0
 
                 for fallbackWindow in fallbackWindows {
+                    if shouldSkipSnapshotWindow(
+                        appBundleID: app.bundleIdentifier,
+                        title: fallbackWindow.title,
+                        role: nil,
+                        subrole: nil,
+                        frame: fallbackWindow.frame
+                    ) {
+                        continue
+                    }
+
                     let fallbackFrameKey = Self.frameIdentityKey(frame: fallbackWindow.frame)
                     guard !knownFrameKeys.contains(fallbackFrameKey) else {
                         continue
@@ -139,6 +197,10 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                         "AX capture partial for pid=\(app.processIdentifier, privacy: .public); merged \(appendedFallbackCount, privacy: .public) WindowServer \(fallbackSource, privacy: .public) window(s)"
                     )
                 }
+            } else if isAXEmptyAllWindowListFallback {
+                logger.debug(
+                    "Skipped WindowServer all-window-list fallback for pid=\(app.processIdentifier, privacy: .public) because AX captured no windows and fallback had no non-zero-layer evidence; treating app as having no open windows"
+                )
             } else if !fallbackWindows.isEmpty, !appSnapshots.isEmpty {
                 logger.debug(
                     "Skipped WindowServer fallback merge for pid=\(app.processIdentifier, privacy: .public) because AX already captured windows and fallback did not add expected extra windows (source=\(fallbackSource, privacy: .public) fallbackCount=\(fallbackWindows.count, privacy: .public) axCount=\(appSnapshots.count, privacy: .public))"
@@ -195,6 +257,7 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         var activatedPIDsForWindowExposure = Set<Int32>()
 
         for (appPID, appSnapshots) in grouped {
+            let appBundleID = appSnapshots.first?.appBundleID
             let onScreenWindowNumbers = onScreenWindowNumbersByPID[appPID] ?? []
             let partitionedSnapshots = partitionSnapshotsByCurrentSpace(
                 appSnapshots,
@@ -215,12 +278,14 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                 continue
             }
 
+            let eligibleRestorableSnapshots = eligibleSnapshots
+
             let appElement = AXUIElementCreateApplication(appPID)
             var windows = windowsForAppElement(appElement)
 
             if shouldAttemptActivationForWindowExposure(
                 appPID: appPID,
-                snapshots: eligibleSnapshots,
+                snapshots: eligibleRestorableSnapshots,
                 windows: windows,
                 originalFrontmostPID: originalFrontmostPID
             ),
@@ -236,24 +301,51 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                 )
             }
 
+            if isFinderBundleID(appBundleID),
+                appPID != originalFrontmostPID,
+                activateAppForWindowExposure(pid: appPID)
+            {
+                activatedPIDsForWindowExposure.insert(appPID)
+                logger.debug(
+                    "Activated Finder pid=\(appPID, privacy: .public) before restore to improve AX frame-write reliability"
+                )
+                windows = waitForWindowExposure(
+                    appElement: appElement,
+                    minimumCount: max(1, windows.count)
+                )
+            }
+
+            if isFinderBundleID(appBundleID) {
+                // Finder frequently includes AX windows that reject frame writes
+                // (for example, pseudo windows). Keep Finder-specific filtering
+                // isolated so behavior for other apps remains unchanged.
+                let settableWindows = windowsWithSettableFrameAttributes(windows)
+                if !settableWindows.isEmpty, settableWindows.count < windows.count {
+                    logger.debug(
+                        "Finder restore filtered non-settable AX windows (settable=\(settableWindows.count, privacy: .public) total=\(windows.count, privacy: .public))"
+                    )
+                    windows = settableWindows
+                }
+            }
+
             let requiresFullExposure =
-                shouldRequireFullExposure(for: eligibleSnapshots)
-                && windows.count < eligibleSnapshots.count
+                shouldRequireFullExposure(for: eligibleRestorableSnapshots)
+                && windows.count < eligibleRestorableSnapshots.count
             if requiresFullExposure {
-                recoverableFailureCount += eligibleSnapshots.count
-                deferredSnapshotCount += eligibleSnapshots.count
+                recoverableFailureCount += eligibleRestorableSnapshots.count
+                deferredSnapshotCount += eligibleRestorableSnapshots.count
                 logger.warning(
-                    "App pid=\(appPID, privacy: .public) exposed \(windows.count, privacy: .public)/\(eligibleSnapshots.count, privacy: .public) window(s) for an ambiguous multi-window restore set; deferring app restore"
+                    "App pid=\(appPID, privacy: .public) exposed \(windows.count, privacy: .public)/\(eligibleRestorableSnapshots.count, privacy: .public) window(s) for an ambiguous multi-window restore set; deferring app restore"
                 )
                 continue
             }
 
             guard !windows.isEmpty else {
                 if isAppRunning(pid: appPID) {
-                    recoverableFailureCount += eligibleSnapshots.count
-                    deferredSnapshotCount += eligibleSnapshots.count
+                    recoverableFailureCount += eligibleRestorableSnapshots.count
+                    deferredSnapshotCount += eligibleRestorableSnapshots.count
                     logger.warning(
-                        "App pid=\(appPID, privacy: .public) is running but has no AX windows yet; deferring \(eligibleSnapshots.count, privacy: .public) eligible snapshot(s)"
+                        "App pid=\(appPID, privacy: .public) is running but has no AX windows yet; deferring \(eligibleRestorableSnapshots.count, privacy: .public) eligible snapshot(s)"
                     )
                 }
                 logger.debug(
@@ -263,10 +355,11 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
             }
 
             logger.debug(
-                "Restore app pid=\(appPID, privacy: .public) snapshots=\(eligibleSnapshots.count, privacy: .public) liveWindows=\(windows.count, privacy: .public) deferredInactiveSpace=\(inactiveSpaceDeferredSnapshots.count, privacy: .public)"
+                "Restore app pid=\(appPID, privacy: .public) snapshots=\(eligibleRestorableSnapshots.count, privacy: .public) liveWindows=\(windows.count, privacy: .public) deferredInactiveSpace=\(inactiveSpaceDeferredSnapshots.count, privacy: .public)"
             )
-            let candidates = windows.map { window in
+            let candidates = windows.enumerated().map { index, window in
                 WindowCandidate(
+                    windowIndex: index,
                     title: stringValue(of: window, attribute: kAXTitleAttribute as CFString),
                     frame: frameForWindow(window),
                     windowNumber: windowNumber(of: window),
@@ -274,16 +367,16 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                     subrole: stringValue(of: window, attribute: kAXSubroleAttribute as CFString)
                 )
             }
-            var unusedIndices = Set(windows.indices)
+            let orderedSnapshots = eligibleRestorableSnapshots.sorted(by: {
+                $0.windowIndex < $1.windowIndex
+            })
+            let assignments = assignedWindowIndices(
+                snapshots: orderedSnapshots,
+                candidates: candidates
+            )
 
-            for snapshot in eligibleSnapshots.sorted(by: { $0.windowIndex < $1.windowIndex }) {
-                guard
-                    let windowIndex = bestMatchingIndex(
-                        for: snapshot,
-                        candidates: candidates,
-                        unusedIndices: unusedIndices
-                    )
-                else {
+            for (snapshotIndex, snapshot) in orderedSnapshots.enumerated() {
+                guard let windowIndex = assignments[snapshotIndex] else {
                     recoverableFailureCount += 1
                     logger.debug(
                         "Could not match snapshot window for pid=\(appPID, privacy: .public) title=\(String(describing: snapshot.windowTitle), privacy: .public) index=\(snapshot.windowIndex, privacy: .public)"
@@ -291,11 +384,45 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                     continue
                 }
 
-                unusedIndices.remove(windowIndex)
                 let adjustedFrame = screenService.adjustedFrame(
                     snapshot.frame.cgRect,
                     preferredDisplayID: snapshot.screenDisplayID
                 )
+                let isFinderWindow = isFinderBundleID(snapshot.appBundleID)
+                if isFinderWindow {
+                    if let currentFrame = frameForWindow(windows[windowIndex]),
+                        isFinderWindowAligned(
+                            currentFrame: currentFrame,
+                            preferredDisplayID: snapshot.screenDisplayID
+                        )
+                    {
+                        alreadyAlignedCount += 1
+                        resolvedSnapshots.append(snapshot)
+                        continue
+                    }
+
+                    _ = raiseWindowIfSupported(windows[windowIndex])
+                    let finderOutcome = moveFinderWindow(
+                        windows[windowIndex],
+                        targetFrame: adjustedFrame,
+                        preferredDisplayID: snapshot.screenDisplayID
+                    )
+                    switch finderOutcome {
+                    case .aligned:
+                        alreadyAlignedCount += 1
+                        resolvedSnapshots.append(snapshot)
+                    case .moved:
+                        movedWindowCount += 1
+                        resolvedSnapshots.append(snapshot)
+                    case .failed:
+                        recoverableFailureCount += 1
+                        logger.warning(
+                            "Finder position restore failed to converge for pid=\(appPID, privacy: .public) title=\(String(describing: snapshot.windowTitle), privacy: .public) candidateIndex=\(windowIndex, privacy: .public)"
+                        )
+                    }
+                    continue
+                }
+
                 if let currentFrame = frameForWindow(windows[windowIndex]),
                     isApproximatelySameFrame(currentFrame, adjustedFrame)
                 {
@@ -303,17 +430,25 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                     resolvedSnapshots.append(snapshot)
                     continue
                 }
-                let setFrameResult = setFrame(adjustedFrame, for: windows[windowIndex])
+
+                let setFrameResult = setFrame(
+                    adjustedFrame,
+                    for: windows[windowIndex]
+                )
                 if setFrameResult.success {
                     // Some apps report AX success but immediately snap windows back.
                     // Count a move only after the frame actually converges.
-                    if didFrameConverge(for: windows[windowIndex], expectedFrame: adjustedFrame) {
+                    if didFrameConverge(
+                        for: windows[windowIndex],
+                        expectedFrame: adjustedFrame,
+                        waitDuration: 0.2
+                    ) {
                         movedWindowCount += 1
                         resolvedSnapshots.append(snapshot)
                     } else {
                         recoverableFailureCount += 1
                         logger.warning(
-                            "AX setFrame reported success but frame did not converge for pid=\(appPID, privacy: .public) title=\(String(describing: snapshot.windowTitle), privacy: .public) index=\(windowIndex, privacy: .public)"
+                            "AX setFrame reported success but frame did not converge for pid=\(appPID, privacy: .public) title=\(String(describing: snapshot.windowTitle), privacy: .public) candidateIndex=\(windowIndex, privacy: .public)"
                         )
                     }
                 } else {
@@ -323,7 +458,7 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                         recoverableFailureCount += 1
                     }
                     logger.warning(
-                        "AX setFrame failed for pid=\(appPID, privacy: .public) title=\(String(describing: snapshot.windowTitle), privacy: .public) index=\(windowIndex, privacy: .public) positionError=\(setFrameResult.position.rawValue, privacy: .public) sizeError=\(setFrameResult.size.rawValue, privacy: .public)"
+                        "AX setFrame failed for pid=\(appPID, privacy: .public) title=\(String(describing: snapshot.windowTitle), privacy: .public) candidateIndex=\(windowIndex, privacy: .public) positionError=\(setFrameResult.position.rawValue, privacy: .public) sizeError=\(setFrameResult.size.rawValue, privacy: .public)"
                     )
                 }
             }
@@ -432,7 +567,10 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         return (value as? Bool) ?? false
     }
 
-    private func setFrame(_ frame: CGRect, for window: AXUIElement) -> SetFrameResult {
+    private func setFrame(
+        _ frame: CGRect,
+        for window: AXUIElement
+    ) -> SetFrameResult {
         var origin = frame.origin
         var size = frame.size
 
@@ -450,17 +588,142 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
             window, kAXSizeAttribute as CFString, sizeValue
         )
 
+        if positionResult == .success && sizeResult == .success {
+            return SetFrameResult(position: positionResult, size: sizeResult)
+        }
+
         return SetFrameResult(position: positionResult, size: sizeResult)
     }
 
-    private func didFrameConverge(for window: AXUIElement, expectedFrame: CGRect) -> Bool {
+    private func setFrameAttribute(_ frame: CGRect, for window: AXUIElement) -> AXError {
+        var mutableFrame = frame
+        guard let frameValue = AXValueCreate(.cgRect, &mutableFrame) else {
+            return .failure
+        }
+
+        let frameAttribute = "AXFrame" as CFString
+
+        return AXUIElementSetAttributeValue(
+            window, frameAttribute, frameValue
+        )
+    }
+
+    private func setPosition(_ origin: CGPoint, for window: AXUIElement) -> AXError {
+        var mutableOrigin = origin
+        guard let positionValue = AXValueCreate(.cgPoint, &mutableOrigin) else {
+            return .failure
+        }
+        return AXUIElementSetAttributeValue(
+            window, kAXPositionAttribute as CFString, positionValue
+        )
+    }
+
+    private enum FinderMoveOutcome {
+        case moved
+        case aligned
+        case failed
+    }
+
+    private func moveFinderWindow(
+        _ window: AXUIElement,
+        targetFrame: CGRect,
+        preferredDisplayID: UInt32?
+    ) -> FinderMoveOutcome {
+        if let currentFrame = frameForWindow(window),
+            isFinderWindowAligned(
+                currentFrame: currentFrame,
+                preferredDisplayID: preferredDisplayID
+            )
+        {
+            return .aligned
+        }
+
+        let frameWithCurrentSize: CGRect
+        if let currentFrame = frameForWindow(window) {
+            frameWithCurrentSize = CGRect(origin: targetFrame.origin, size: currentFrame.size)
+        } else {
+            frameWithCurrentSize = targetFrame
+        }
+
+        let positionResult = setPosition(targetFrame.origin, for: window)
+        if didFinderWindowConverge(
+            for: window,
+            targetOrigin: targetFrame.origin,
+            preferredDisplayID: preferredDisplayID,
+            waitDuration: 0.6
+        ) {
+            return .moved
+        }
+
+        // Finder can report successful position writes but keep the window on the
+        // wrong display. Force a frame write as a second step before failing.
+        let fallbackFrameResult = setFrameAttribute(frameWithCurrentSize, for: window)
+        if fallbackFrameResult != .success, positionResult != .success {
+            return .failed
+        }
+
+        let convergedAfterFallback = didFinderWindowConverge(
+            for: window,
+            targetOrigin: targetFrame.origin,
+            preferredDisplayID: preferredDisplayID,
+            waitDuration: 0.6
+        )
+        return convergedAfterFallback ? .moved : .failed
+    }
+
+    private func isFinderWindowAligned(
+        currentFrame: CGRect,
+        preferredDisplayID: UInt32?
+    ) -> Bool {
+        guard let preferredDisplayID else {
+            return false
+        }
+
+        return screenService.displayID(for: currentFrame) == preferredDisplayID
+    }
+
+    private func didFinderWindowConverge(
+        for window: AXUIElement,
+        targetOrigin: CGPoint,
+        preferredDisplayID: UInt32?,
+        waitDuration: TimeInterval
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(waitDuration)
+        while Date() < deadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.03))
+            guard let frame = frameForWindow(window) else {
+                continue
+            }
+
+            if let preferredDisplayID,
+                screenService.displayID(for: frame) == preferredDisplayID
+            {
+                return true
+            }
+
+            // Fallback when display ID inference is unavailable.
+            if abs(frame.minX - targetOrigin.x) <= 60,
+                abs(frame.minY - targetOrigin.y) <= 60
+            {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private func didFrameConverge(
+        for window: AXUIElement,
+        expectedFrame: CGRect,
+        waitDuration: TimeInterval
+    ) -> Bool {
         if let frame = frameForWindow(window),
             isApproximatelySameFrame(frame, expectedFrame)
         {
             return true
         }
 
-        let deadline = Date().addingTimeInterval(0.2)
+        let deadline = Date().addingTimeInterval(waitDuration)
         while Date() < deadline {
             RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.03))
             if let frame = frameForWindow(window),
@@ -526,60 +789,81 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         return unsafeDowncast(value as AnyObject, to: AXUIElement.self)
     }
 
-    private func bestMatchingIndex(
-        for snapshot: WindowSnapshot,
-        candidates: [WindowCandidate],
-        unusedIndices: Set<Int>
-    ) -> Int? {
-        if let snapshotWindowNumber = snapshot.windowNumber {
-            for index in unusedIndices.sorted() {
-                if candidates[index].windowNumber == snapshotWindowNumber {
-                    return index
+    private func assignedWindowIndices(
+        snapshots: [WindowSnapshot],
+        candidates: [WindowCandidate]
+    ) -> [Int: Int] {
+        guard !snapshots.isEmpty, !candidates.isEmpty else {
+            return [:]
+        }
+
+        var scoredPairs: [MatchPair] = []
+        scoredPairs.reserveCapacity(snapshots.count * candidates.count)
+
+        for (snapshotIndex, snapshot) in snapshots.enumerated() {
+            for (candidateIndex, candidate) in candidates.enumerated() {
+                guard
+                    let score = matchScore(
+                        snapshot: snapshot,
+                        candidate: candidate,
+                        snapshotCount: snapshots.count
+                    )
+                else {
+                    continue
                 }
+
+                scoredPairs.append(
+                    MatchPair(
+                        snapshotIndex: snapshotIndex,
+                        candidateIndex: candidateIndex,
+                        score: score
+                    )
+                )
             }
         }
 
-        if let snapshotRole = normalizedString(snapshot.windowRole),
-            let snapshotSubrole = normalizedString(snapshot.windowSubrole)
-        {
-            for index in unusedIndices.sorted() {
-                if normalizedString(candidates[index].role) == snapshotRole,
-                    normalizedString(candidates[index].subrole) == snapshotSubrole
-                {
-                    return index
-                }
+        // Score every snapshot-window pair, then pick the best non-conflicting
+        // assignments across the whole app restore set.
+        scoredPairs.sort { lhs, rhs in
+            if lhs.score.strength != rhs.score.strength {
+                return lhs.score.strength.rawValue > rhs.score.strength.rawValue
             }
-        }
 
-        if let snapshotTitle = snapshot.windowTitle?.trimmingCharacters(
-            in: .whitespacesAndNewlines), !snapshotTitle.isEmpty
-        {
-            let normalizedTitle = snapshotTitle.lowercased()
-            for index in unusedIndices.sorted() {
-                if candidates[index].title?.trimmingCharacters(in: .whitespacesAndNewlines)
-                    .lowercased()
-                    == normalizedTitle
-                {
-                    return index
-                }
+            if lhs.score.frameDistance != rhs.score.frameDistance {
+                return lhs.score.frameDistance < rhs.score.frameDistance
             }
+
+            if lhs.score.indexDistance != rhs.score.indexDistance {
+                return lhs.score.indexDistance < rhs.score.indexDistance
+            }
+
+            if lhs.snapshotIndex != rhs.snapshotIndex {
+                return snapshots[lhs.snapshotIndex].windowIndex
+                    < snapshots[rhs.snapshotIndex].windowIndex
+            }
+
+            return lhs.candidateIndex < rhs.candidateIndex
         }
 
-        if let closestByFrame = bestFrameMatchIndex(
-            snapshot: snapshot,
-            candidates: candidates,
-            unusedIndices: unusedIndices
-        ) {
-            return closestByFrame
+        var assignments: [Int: Int] = [:]
+        var usedSnapshots = Set<Int>()
+        var usedCandidates = Set<Int>()
+
+        for pair in scoredPairs {
+            guard !usedSnapshots.contains(pair.snapshotIndex) else {
+                continue
+            }
+
+            guard !usedCandidates.contains(pair.candidateIndex) else {
+                continue
+            }
+
+            assignments[pair.snapshotIndex] = pair.candidateIndex
+            usedSnapshots.insert(pair.snapshotIndex)
+            usedCandidates.insert(pair.candidateIndex)
         }
 
-        if snapshot.windowIndex >= 0, snapshot.windowIndex < candidates.count,
-            unusedIndices.contains(snapshot.windowIndex)
-        {
-            return snapshot.windowIndex
-        }
-
-        return unusedIndices.sorted().first
+        return assignments
     }
 
     private func normalizedString(_ value: String?) -> String? {
@@ -590,28 +874,172 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         return value.lowercased()
     }
 
-    private func bestFrameMatchIndex(
-        snapshot: WindowSnapshot,
-        candidates: [WindowCandidate],
-        unusedIndices: Set<Int>
-    ) -> Int? {
-        let snapshotFrame = snapshot.frame.cgRect
-        var bestIndex: Int?
-        var bestScore = CGFloat.greatestFiniteMagnitude
-
-        for index in unusedIndices {
-            guard let candidateFrame = candidates[index].frame else {
-                continue
-            }
-
-            let score = frameDistanceScore(snapshotFrame, candidateFrame)
-            if score < bestScore {
-                bestScore = score
-                bestIndex = index
-            }
+    private func shouldSkipSnapshotWindow(
+        appBundleID: String?,
+        title: String?,
+        role: String?,
+        subrole: String?,
+        frame: CGRect?
+    ) -> Bool {
+        guard isFinderBundleID(appBundleID) else {
+            return false
         }
 
-        return bestIndex
+        if let normalizedRole = normalizedString(role),
+            normalizedRole != normalizedString(kAXWindowRole as String)
+        {
+            logger.debug(
+                "Skipping Finder non-window pseudo-surface during snapshot capture (role=\(String(describing: role), privacy: .public) subrole=\(String(describing: subrole), privacy: .public))"
+            )
+            return true
+        }
+
+        // Finder exposes a Desktop pseudo-window that is not meaningfully
+        // restorable via AX positioning and pollutes multi-window matching.
+        let normalizedTitle = normalizedString(title)
+        if normalizedTitle == "desktop" {
+            logger.debug(
+                "Skipping Finder Desktop pseudo-window during snapshot capture (role=\(String(describing: role), privacy: .public) subrole=\(String(describing: subrole), privacy: .public))"
+            )
+            return true
+        }
+
+        if normalizedTitle == nil,
+            let frame,
+            looksLikeFinderVirtualDesktopSurface(frame)
+        {
+            logger.debug(
+                "Skipping Finder virtual-desktop pseudo-surface during snapshot capture (frame=\(NSStringFromRect(frame), privacy: .public))"
+            )
+            return true
+        }
+
+        return false
+    }
+
+    private func isFinderBundleID(_ bundleID: String?) -> Bool {
+        bundleID == Self.finderBundleID
+    }
+
+    private func looksLikeFinderVirtualDesktopSurface(_ frame: CGRect) -> Bool {
+        let screenFrames = NSScreen.screens.map(\.frame)
+        guard !screenFrames.isEmpty else {
+            return false
+        }
+
+        let virtualDesktopFrame = screenFrames.reduce(CGRect.null) { partial, screenFrame in
+            partial.union(screenFrame)
+        }
+        let virtualDesktopArea =
+            max(0, virtualDesktopFrame.width) * max(0, virtualDesktopFrame.height)
+        guard virtualDesktopArea > 0 else {
+            return false
+        }
+
+        let nearGlobalBounds =
+            abs(frame.minX - virtualDesktopFrame.minX) <= 2
+            && abs(frame.maxX - virtualDesktopFrame.maxX) <= 2
+            && abs(frame.minY - virtualDesktopFrame.minY) <= 2
+            && abs(frame.maxY - virtualDesktopFrame.maxY) <= 2
+
+        let overlapFrame = frame.intersection(virtualDesktopFrame)
+        let overlapArea = max(0, overlapFrame.width) * max(0, overlapFrame.height)
+        let coverage = overlapArea / virtualDesktopArea
+
+        return nearGlobalBounds || coverage >= 0.95
+    }
+
+    private func windowsWithSettableFrameAttributes(_ windows: [AXUIElement]) -> [AXUIElement] {
+        windows.filter { window in
+            var positionSettable = DarwinBoolean(false)
+            let positionResult = AXUIElementIsAttributeSettable(
+                window, kAXPositionAttribute as CFString, &positionSettable
+            )
+            guard positionResult == .success, positionSettable.boolValue else {
+                return false
+            }
+
+            var sizeSettable = DarwinBoolean(false)
+            let sizeResult = AXUIElementIsAttributeSettable(
+                window, kAXSizeAttribute as CFString, &sizeSettable
+            )
+            return sizeResult == .success && sizeSettable.boolValue
+        }
+    }
+
+    private func raiseWindowIfSupported(_ window: AXUIElement) -> Bool {
+        AXUIElementPerformAction(window, kAXRaiseAction as CFString) == .success
+    }
+
+    private func matchScore(
+        snapshot: WindowSnapshot,
+        candidate: WindowCandidate,
+        snapshotCount: Int
+    ) -> MatchScore? {
+        let frameDistance: CGFloat
+        if let candidateFrame = candidate.frame {
+            frameDistance = frameDistanceScore(snapshot.frame.cgRect, candidateFrame)
+        } else {
+            frameDistance = CGFloat.greatestFiniteMagnitude
+        }
+        let indexDistance = abs(snapshot.windowIndex - candidate.windowIndex)
+
+        if let snapshotWindowNumber = snapshot.windowNumber,
+            let candidateWindowNumber = candidate.windowNumber
+        {
+            guard snapshotWindowNumber == candidateWindowNumber else {
+                return nil
+            }
+            return MatchScore(
+                strength: .windowNumber,
+                frameDistance: frameDistance,
+                indexDistance: indexDistance
+            )
+        }
+
+        if let snapshotRole = normalizedString(snapshot.windowRole),
+            let snapshotSubrole = normalizedString(snapshot.windowSubrole),
+            normalizedString(candidate.role) == snapshotRole,
+            normalizedString(candidate.subrole) == snapshotSubrole
+        {
+            return MatchScore(
+                strength: .roleSubrole,
+                frameDistance: frameDistance,
+                indexDistance: indexDistance
+            )
+        }
+
+        if let snapshotTitle = normalizedString(snapshot.windowTitle),
+            let candidateTitle = normalizedString(candidate.title),
+            snapshotTitle == candidateTitle
+        {
+            return MatchScore(
+                strength: .title,
+                frameDistance: frameDistance,
+                indexDistance: indexDistance
+            )
+        }
+
+        if candidate.frame != nil {
+            return MatchScore(
+                strength: .frame,
+                frameDistance: frameDistance,
+                indexDistance: indexDistance
+            )
+        }
+
+        // Index-only identity is intentionally weak; allow it only for
+        // single-window restore sets to avoid multi-window cross-matching.
+        let hasUsableIndexIdentity = snapshot.windowIndex >= 0 && candidate.windowIndex >= 0
+        if hasUsableIndexIdentity && snapshotCount == 1 {
+            return MatchScore(
+                strength: .index,
+                frameDistance: frameDistance,
+                indexDistance: indexDistance
+            )
+        }
+
+        return nil
     }
 
     private func frameDistanceScore(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
@@ -668,6 +1096,19 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
             // The app currently has no visible WindowServer windows in this
             // space/session, so restoring these snapshots now is likely wrong.
             return ([], snapshots)
+        }
+
+        let snapshotWindowNumbers = Set(snapshotsWithWindowNumbers)
+        let overlapWindowNumbers = snapshotWindowNumbers.intersection(onScreenWindowNumbers)
+        if overlapWindowNumbers.isEmpty {
+            // Window numbers are not stable across every sleep/wake cycle
+            // (Finder is a common example). If we have visible windows but no
+            // number overlap, avoid deferring the entire app and fall back to
+            // title/frame matching for this attempt.
+            logger.debug(
+                "Window-number overlap is empty despite visible windows; bypassing strict active-space partition for this app"
+            )
+            return (snapshots, [])
         }
 
         var eligible: [WindowSnapshot] = []
@@ -1117,10 +1558,31 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
     }
 
     private struct WindowCandidate {
+        let windowIndex: Int
         let title: String?
         let frame: CGRect?
         let windowNumber: Int?
         let role: String?
         let subrole: String?
+    }
+
+    private enum MatchStrength: Int {
+        case windowNumber = 500
+        case roleSubrole = 400
+        case title = 300
+        case frame = 200
+        case index = 100
+    }
+
+    private struct MatchScore {
+        let strength: MatchStrength
+        let frameDistance: CGFloat
+        let indexDistance: Int
+    }
+
+    private struct MatchPair {
+        let snapshotIndex: Int
+        let candidateIndex: Int
+        let score: MatchScore
     }
 }

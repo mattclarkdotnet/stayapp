@@ -136,6 +136,49 @@ struct WindowRoundTripTests {
         let expected = Set(baseline.map { $0.frame.cgRect })
         #expect(frames == expected)
     }
+
+    @Test("Finder round-trip restores target display without forcing per-display size replay")
+    func finderRoundTripRestoresTargetDisplay() {
+        let controller = FixtureWindowController()
+        let service = FixtureWindowSnapshotService(controller: controller)
+
+        let recent = controller.createWindow(
+            appPID: 4004,
+            appBundleID: "com.apple.finder",
+            appName: "Finder",
+            title: "Recent",
+            frame: CGRect(x: 120, y: 120, width: 960, height: 700)
+        )
+        let untitled = controller.createWindow(
+            appPID: 4004,
+            appBundleID: "com.apple.finder",
+            appName: "Finder",
+            title: nil,
+            frame: CGRect(x: 1260, y: 120, width: 840, height: 620)
+        )
+
+        let baseline = service.capture()
+        #expect(baseline.count == 2)
+        #expect(controller.window(id: recent)?.displayID == 1)
+        #expect(controller.window(id: untitled)?.displayID == 5)
+
+        // Perturb onto primary display with a different size to model Finder's
+        // per-display size memory behavior.
+        controller.setFrame(
+            for: untitled, frame: CGRect(x: 180, y: 140, width: 700, height: 500))
+        #expect(controller.window(id: untitled)?.displayID == 1)
+
+        let result = service.restore(from: baseline)
+        #expect(result.recoverableFailureCount == 0)
+        #expect(result.movedWindowCount == 1)
+        #expect(result.alreadyAlignedCount == 1)
+        #expect(result.isComplete)
+
+        let restoredUntitled = controller.window(id: untitled)
+        #expect(restoredUntitled?.displayID == 5)
+        #expect(restoredUntitled?.frame.width == 700)
+        #expect(restoredUntitled?.frame.height == 500)
+    }
 }
 
 private struct FixtureWindow: Equatable {
@@ -268,6 +311,27 @@ private final class FixtureWindowController {
                 }
 
                 let targetFrame = snapshot.frame.cgRect
+                if snapshot.appBundleID == "com.apple.finder" {
+                    if let targetDisplayID = snapshot.screenDisplayID,
+                        displayID(for: liveWindow.frame) == targetDisplayID
+                    {
+                        aligned += 1
+                        continue
+                    }
+
+                    // Finder remembers different window sizes per display/space.
+                    // Restore target display by moving origin while keeping size.
+                    setFrame(
+                        for: matchedID,
+                        frame: CGRect(
+                            origin: targetFrame.origin,
+                            size: liveWindow.frame.size
+                        )
+                    )
+                    moved += 1
+                    continue
+                }
+
                 if approximatelyEqual(liveWindow.frame, targetFrame) {
                     aligned += 1
                     continue

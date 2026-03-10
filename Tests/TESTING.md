@@ -61,6 +61,7 @@ Core round-trip cases to implement first:
 
 - one titled window
 - multiple titled windows
+- Finder display-first restore (target display alignment with per-display size variance)
 - untitled/tool windows
 - partial app availability during restore
 - stale persisted snapshot competing with fresh capture
@@ -95,6 +96,7 @@ Add/expand tests for:
 - stale snapshot identity (PID drift, bundle/name fallback behavior)
 - deferred-only residuals parking until active-space/environment change
 - untitled multi-window matching using enriched identity (`windowNumber`, role/subrole)
+- Finder-specific capture/restore quirks (Desktop pseudo-window filtering, display-first restore semantics)
 
 ## When a Bug Is Found
 

@@ -116,9 +116,21 @@ Why: avoids premature restore while monitors are still unavailable, but prevents
 - Partial merge is intentionally conservative: if AX already captured windows, extra
   fallback windows are merged only when fallback contains non-zero-layer windows
   (to avoid polluting snapshots with layer-0 duplicates/chrome from regular apps).
-- For multi-space scenarios, when full WindowServer all-window-list data contains
-  more windows than AX for the same app, Stay also merges distinct layer-0 fallback
-  windows so windows on non-active Spaces are not silently dropped at capture time.
+- Finder Desktop pseudo-windows are filtered at capture time so non-restorable
+  desktop entries do not pollute multi-window matching/assignment.
+- Finder capture augments `kAXWindowsAttribute` with discovered window-like AX
+  children to recover Finder windows that are not always surfaced in the top-level list.
+- Finder non-window AX pseudo-surfaces (for example `AXScrollArea` desktop-like
+  entries) are filtered at capture time.
+- Finder WindowServer fallback windows are merged when AX captures no Finder
+  windows, or when AX capture includes non-window pseudo-surfaces that indicate
+  an incomplete Finder window set.
+- For non-Finder apps, partial fallback merge is restricted to non-zero-layer
+  WindowServer entries when AX already returned windows. This avoids polluting
+  snapshot sets with extra layer-0 surfaces.
+- For non-Finder apps where AX captures zero windows and only `all-window-list`
+  has candidates, Stay requires non-zero-layer evidence before accepting fallback
+  entries. If that evidence is absent, capture treats the app as having no open windows.
 - Reads each window's frame (`kAXPositionAttribute`, `kAXSizeAttribute`).
 - Associates each window with a display ID via screen intersection/nearest-screen fallback.
 - Saves app/window identity fields (PID, title, index) and frame.
@@ -135,9 +147,18 @@ Why: avoids premature restore while monitors are still unavailable, but prevents
   - deferred (inactive space / not currently visible)
 - Multi-window app activation is intentionally limited; automatic wake restore does not
   force-activate multi-window apps just to expose hidden space windows.
-- Matches saved snapshots to live windows by `windowNumber` first (when available),
-  then role/subrole, then title, then nearest-frame scoring, then index fallback.
-- Unmatched snapshots are counted as recoverable failures; they are never silently ignored.
+- Performs app-level one-to-one assignment across all snapshot/live-window pairs using
+  scored identity strength (`windowNumber` > role/subrole > title > frame > index).
+- Matching is confidence-gated: low-confidence index-only matching is limited to
+  single-window restore sets, and multi-window sets require stronger identity.
+- Unmatched snapshots are counted as recoverable failures; no app-specific pre-drop is
+  treated as resolved before matching.
+- Finder-specific restore handling:
+  - Finder is explicitly activated before restore attempts, and Finder windows are raised before frame writes
+  - only AX windows with settable frame attributes are considered restore candidates
+  - Finder restore is display-first: if a Finder window is already on the target display, it is treated as aligned even if size differs
+  - Finder move writes use position-first restore (not strict size replay), and always run a second-step `AXFrame` fallback when initial convergence fails
+  - Finder convergence checks use target-display membership (with origin fallback), not strict frame equality, to tolerate Finder’s per-display size memory
 - Before writing AX position/size, restore compares current and target frame and skips
   writes for windows that are already aligned within tolerance.
 - Restores frame using screen-aware adjustment:
