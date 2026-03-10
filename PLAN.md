@@ -36,3 +36,10 @@ Make simple, manually invoked capture/restore flows reliable before investing in
 - Manual capture/restore works for baseline scenarios without ad-hoc operator intervention.
 - Baseline scenarios are covered by automated tests and stay green.
 - Sleep/wake tuning work starts only after manual baseline reliability is demonstrated.
+
+## Next Planning Note
+
+- After the current baseline is locked, prioritize complex wake/login timing cases:
+  - displays waking in different orders
+  - login completed while only one display is active
+- Model these flows with explicit state machines in `StayCore`; do not add ad-hoc branching logic.

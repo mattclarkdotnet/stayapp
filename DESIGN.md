@@ -225,6 +225,10 @@ These logs are intended to diagnose timing issues specific to real wake/login cy
 - AX permissions are required; without them Stay cannot manage windows.
 - Some apps may restrict AX window moves.
 - Future improvements:
+  - explicit wake/login sequencing state machine for complex monitor timing:
+    - displays waking in different orders
+    - login occurring while only a subset of displays is active
+    - keep this logic in `StayCore` state transitions (avoid ad-hoc procedural handling)
   - richer logging/diagnostics for readiness state
   - optional user-configurable retry/timeout policy
   - launch-at-login and distribution packaging flow

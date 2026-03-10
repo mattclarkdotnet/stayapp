@@ -22,6 +22,15 @@ Maintain a set of documentation files that stay in sync with the codebase:
     - TESTS.md: documents how the test suite supports the testing strategy from TESTING.md, the state of coverage, any notable edge cases
     - SCENARIOS.md: documents the top level user-focused test scenarios and their expected outcomes in BDD style (GIVEN, WHEN, THEN)
 
+### ROADMAP.md format rules
+
+- `ROADMAP.md` must always use exactly four sections: `Now`, `Next`, `Later`, and `Completed`.
+- `Now` must contain exactly one item.
+- `Next` must contain exactly one item.
+- `Later` must contain all remaining items, ordered by priority (highest first).
+- `Completed` must list finished items in chronological order (most recent first).
+- Do not leave completed items in `Now`, `Next`, or `Later`; move them into `Completed`.
+
 Comment the codebase thoroughly to show the correspondence to DESIGN.md.  When the code or the design changes, update the comments and DESIGN.md to reflect the current state.
 
 ## Language and tooling
