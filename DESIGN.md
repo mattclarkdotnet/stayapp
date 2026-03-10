@@ -163,6 +163,9 @@ Why: avoids premature restore while monitors are still unavailable, but prevents
   - Finder convergence checks use target-display membership (with origin fallback), not strict frame equality, to tolerate Finder’s per-display size memory
 - Before writing AX position/size, restore compares current and target frame and skips
   writes for windows that are already aligned within tolerance.
+- Restore also performs a display-alignment short-circuit: when all matched
+  windows for an app are already on their expected displays, frame writes are
+  skipped to avoid unnecessary visible movement/resizing.
 - Restores frame using screen-aware adjustment:
   - prefer original display ID when available
   - clamp to visible area to avoid off-screen placement

@@ -139,6 +139,7 @@ Scope:
 - event ordering and idempotency (duplicate wake, wake-before-sleep, repeated sleep)
 - persistence fallback behavior
 - readiness and restore retry interactions
+- seeded event-trace fuzzing with replayable seeds for coordinator invariants
 
 Why:
 
@@ -148,6 +149,7 @@ Why:
 Gate:
 
 - must pass for every change set (`swift test`)
+- seeded fuzz traces live in `StayCoreTests` and should stay deterministic/replayable
 
 ### 2. Integration Tests (scripted/system-level, still mostly automated)
 

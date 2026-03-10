@@ -951,6 +951,127 @@ struct SleepWakeCoordinatorTests {
         #expect(!repository.saved.contains(where: { $0.windowTitle == "Stale Finder" }))
     }
 
+    @Test(
+        "Seeded coordinator fuzz traces preserve core invariants",
+        arguments: [
+            0xA11CE01, 0xA11CE02, 0xA11CE03, 0xA11CE04, 0xA11CE05, 0xA11CE06, 0xA11CE07,
+            0xA11CE08, 0xA11CE09, 0xA11CE0A,
+        ]
+    )
+    func seededCoordinatorFuzzPreservesInvariants(seed: UInt64) {
+        var rng = DeterministicRandom(seed: seed)
+        let capture = StubCaptureService()
+        let restore = FuzzRestoreService(seed: seed ^ 0xBAD5EED)
+        let repository = InMemoryRepository()
+        let scheduler = ManualScheduler()
+        let readiness = FuzzReadinessChecker(seed: seed ^ 0xFACE_FEED)
+
+        let coordinator = SleepWakeCoordinator(
+            capturing: capture,
+            restoring: restore,
+            repository: repository,
+            readinessChecker: readiness,
+            scheduler: scheduler,
+            wakeDelay: 0,
+            retryInterval: 0,
+            maxWaitAfterWake: -1,
+            maxStagnantAttemptsBeforeEnvironmentWait: 2,
+            maxPostTimeoutEnvironmentRetries: 2
+        )
+
+        var hasSeenWillSleep = false
+        var processedRestoreCallCount = 0
+        var previousCallSnapshotCount: Int?
+        var previousRestoreResult: WindowRestoreResult?
+
+        func processNewRestoreCalls() {
+            while processedRestoreCallCount < restore.calls.count {
+                let call = restore.calls[processedRestoreCallCount]
+                let result = restore.results[processedRestoreCallCount]
+
+                #expect(hasSeenWillSleep)
+
+                if let previousCallSnapshotCount {
+                    #expect(call.count <= previousCallSnapshotCount)
+
+                    if let previousRestoreResult, !previousRestoreResult.isComplete {
+                        let expectedNextCount = max(
+                            0,
+                            previousCallSnapshotCount
+                                - previousRestoreResult.resolvedSnapshots.count
+                        )
+                        #expect(call.count == expectedNextCount)
+                    }
+                }
+
+                previousCallSnapshotCount = call.count
+                previousRestoreResult = result
+                processedRestoreCallCount += 1
+            }
+        }
+
+        // Randomized external event traces with deterministic seeds.
+        for _ in 0..<120 {
+            let eventRoll = rng.nextInt(100)
+            switch eventRoll {
+            case 0..<18:
+                capture.nextSnapshots = randomCaptureSnapshots(using: &rng)
+                coordinator.handleWillSleep()
+                hasSeenWillSleep = true
+                previousCallSnapshotCount = nil
+                previousRestoreResult = nil
+            case 18..<34:
+                coordinator.handleDidWake()
+            case 34..<48:
+                coordinator.handleEnvironmentDidChange(.screensDidWake)
+            case 48..<62:
+                coordinator.handleEnvironmentDidChange(.sessionDidBecomeActive)
+            case 62..<76:
+                coordinator.handleEnvironmentDidChange(.activeSpaceDidChange)
+            case 76..<90:
+                scheduler.runNext()
+            default:
+                // Bounded drain acts as fuzzed scheduler ticks.
+                for _ in 0..<3 {
+                    scheduler.runNext()
+                }
+            }
+
+            processNewRestoreCalls()
+            #expect(scheduler.livePendingCount <= 1)
+            if !hasSeenWillSleep {
+                #expect(restore.calls.isEmpty)
+            }
+        }
+
+        // Final bounded drain: coordinator should quiesce (no queued retries).
+        for _ in 0..<30 where scheduler.livePendingCount > 0 {
+            scheduler.runNext()
+            processNewRestoreCalls()
+            #expect(scheduler.livePendingCount <= 1)
+        }
+
+        #expect(scheduler.livePendingCount == 0)
+    }
+
+    private func randomCaptureSnapshots(using rng: inout DeterministicRandom) -> [WindowSnapshot] {
+        if rng.nextInt(100) < 25 {
+            return []
+        }
+
+        let appPID = Int32(100 + rng.nextInt(4))
+        let count = 1 + rng.nextInt(3)
+        return (0..<count).map { index in
+            sampleSnapshot(
+                pid: appPID,
+                bundleID: "com.example.fuzz.\(appPID)",
+                appName: "FuzzApp\(appPID)",
+                title: "fuzz-\(appPID)-\(index)",
+                index: index
+            )
+        }
+    }
+
     private func sampleSnapshot(
         pid: Int32 = 123,
         bundleID: String = "com.example.app",
@@ -1043,6 +1164,111 @@ private final class SequencedReadinessChecker: RestoreReadinessChecking {
     }
 }
 
+private final class FuzzReadinessChecker: RestoreReadinessChecking {
+    private var rng: DeterministicRandom
+
+    init(seed: UInt64) {
+        rng = DeterministicRandom(seed: seed)
+    }
+
+    func isReady(toRestore snapshots: [WindowSnapshot]) -> Bool {
+        // Bias toward "ready" while still exercising the readiness gate.
+        rng.nextInt(100) < 75
+    }
+}
+
+private final class FuzzRestoreService: WindowSnapshotRestoring {
+    private var rng: DeterministicRandom
+    var calls: [[WindowSnapshot]] = []
+    var results: [WindowRestoreResult] = []
+
+    init(seed: UInt64) {
+        rng = DeterministicRandom(seed: seed)
+    }
+
+    func restore(from snapshots: [WindowSnapshot]) -> WindowRestoreResult {
+        calls.append(snapshots)
+
+        if snapshots.isEmpty {
+            let result = WindowRestoreResult(
+                isComplete: true,
+                movedWindowCount: 0,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 0,
+                deferredSnapshotCount: 0,
+                resolvedSnapshots: []
+            )
+            results.append(result)
+            return result
+        }
+
+        // Sometimes converge immediately to exercise completion paths.
+        if rng.nextInt(100) < 25 {
+            let result = WindowRestoreResult(
+                isComplete: true,
+                movedWindowCount: 1,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 0,
+                deferredSnapshotCount: 0,
+                resolvedSnapshots: snapshots
+            )
+            results.append(result)
+            return result
+        }
+
+        let resolvedCount = rng.nextInt(snapshots.count + 1)
+        let resolved = Array(snapshots.prefix(resolvedCount))
+        let remainingCount = snapshots.count - resolvedCount
+
+        if remainingCount == 0 {
+            let result = WindowRestoreResult(
+                isComplete: true,
+                movedWindowCount: 0,
+                alreadyAlignedCount: snapshots.count,
+                recoverableFailureCount: 0,
+                deferredSnapshotCount: 0,
+                resolvedSnapshots: resolved
+            )
+            results.append(result)
+            return result
+        }
+
+        let deferredCount = rng.nextInt(remainingCount + 1)
+        let result = WindowRestoreResult(
+            isComplete: false,
+            movedWindowCount: rng.nextInt(3),
+            alreadyAlignedCount: rng.nextInt(3),
+            recoverableFailureCount: remainingCount,
+            deferredSnapshotCount: deferredCount,
+            resolvedSnapshots: resolved
+        )
+        results.append(result)
+        return result
+    }
+}
+
+private struct DeterministicRandom {
+    private var state: UInt64
+
+    init(seed: UInt64) {
+        state = seed == 0 ? 0x9E37_79B9_7F4A_7C15 : seed
+    }
+
+    mutating func nextUInt64() -> UInt64 {
+        // SplitMix64 for stable pseudo-random traces.
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
+    }
+
+    mutating func nextInt(_ upperBound: Int) -> Int {
+        precondition(upperBound > 0)
+        return Int(nextUInt64() % UInt64(upperBound))
+    }
+}
+
 private final class ManualScheduler: SleepWakeScheduling {
     private final class Token: CancellableTask {
         var isCancelled = false
@@ -1061,6 +1287,14 @@ private final class ManualScheduler: SleepWakeScheduling {
 
     var pendingCount: Int {
         pending.count
+    }
+
+    var livePendingCount: Int {
+        pending.reduce(into: 0) { count, item in
+            if !item.token.isCancelled {
+                count += 1
+            }
+        }
     }
 
     @discardableResult

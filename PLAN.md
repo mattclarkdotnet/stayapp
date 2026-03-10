@@ -27,7 +27,17 @@ Handle wake sequences where displays become available in different orders, inclu
 - Duplicate/repeated wake and readiness events.
 - Timeout followed by later environment change.
 
-4. Validate in real scenarios
+4. Add deterministic fuzz + replay harness for event ordering
+- Generate seeded pseudo-random event traces (`willSleep`, `didWake`,
+  environment changes, scheduler ticks).
+- Assert invariants on every trace:
+  - no restore before a sleep cycle
+  - at most one scheduled restore task at a time
+  - pending restore snapshot sets never grow within a wake cycle
+  - coordinator reaches quiescence (no scheduled retries) after bounded ticks
+- Persist failing seeds/traces as fixed regression tests.
+
+5. Validate in real scenarios
 - Run `WakeCycleScenarios` for `finder` and `app` through multiple wake cycles.
 - Confirm no restore thrash and correct final placement after delayed display availability.
 

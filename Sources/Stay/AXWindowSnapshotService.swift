@@ -381,6 +381,22 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                 candidates: candidates
             )
 
+            // If every matched window is already on its captured display, skip
+            // frame writes to avoid visible no-op movement/resizing after wake
+            // when macOS preserved placement but adjusted app-managed frame data.
+            if areAssignmentsDisplayAligned(
+                snapshots: orderedSnapshots,
+                candidates: candidates,
+                assignments: assignments
+            ) {
+                alreadyAlignedCount += orderedSnapshots.count
+                resolvedSnapshots.append(contentsOf: orderedSnapshots)
+                logger.debug(
+                    "Skipping frame writes for pid=\(appPID, privacy: .public) because all matched windows are already on expected displays"
+                )
+                continue
+            }
+
             for (snapshotIndex, snapshot) in orderedSnapshots.enumerated() {
                 guard let windowIndex = assignments[snapshotIndex] else {
                     recoverableFailureCount += 1
@@ -878,6 +894,34 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
             return nil
         }
         return value.lowercased()
+    }
+
+    private func areAssignmentsDisplayAligned(
+        snapshots: [WindowSnapshot],
+        candidates: [WindowCandidate],
+        assignments: [Int: Int]
+    ) -> Bool {
+        guard !snapshots.isEmpty, assignments.count == snapshots.count else {
+            return false
+        }
+
+        for (snapshotIndex, snapshot) in snapshots.enumerated() {
+            guard let expectedDisplayID = snapshot.screenDisplayID else {
+                return false
+            }
+
+            guard
+                let candidateIndex = assignments[snapshotIndex],
+                candidates.indices.contains(candidateIndex),
+                let frame = candidates[candidateIndex].frame,
+                let candidateDisplayID = screenService.displayID(for: frame),
+                candidateDisplayID == expectedDisplayID
+            else {
+                return false
+            }
+        }
+
+        return true
     }
 
     private func shouldSkipSnapshotWindow(

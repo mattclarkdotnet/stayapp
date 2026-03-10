@@ -11,10 +11,9 @@
 
 ## Now
 
-1. Complex wake ordering is handled explicitly
-- Handle screens waking in different orders.
-- Handle login occurring while only one screen is active.
-- Implement this with explicit state machines in `StayCore` (no ad-hoc procedural branching).
+1. Apps with child windows
+- FreeCAD
+- Kicad
 
 ## Next
 
@@ -22,13 +21,19 @@
 
 ## Later
 
-1. Apps with child windows
-2. Full screen apps
-3. Changes in monitor configuration between sleep and wake (default: do nothing)
-4. Productization
+1. Full screen apps
+- full screen apps should remain on their target display, Stay.app should not interfere.
+2. Changes in monitor configuration between sleep and wake
+- it's OK to do nothing, we just don't want to crash or cause any unexpected window movements
+3. Productization
 - App icon and branding assets.
 - Start-on-login hardening.
 - Packaging/signing/notarization/distribution workflows.
+4. Complex wake ordering is handled explicitly
+- Handle screens waking in different orders.
+- Handle login occurring while only one screen is active.
+- Implement this with explicit state machines in `StayCore` (no ad-hoc procedural branching).
+
 
 ## Completed
 
