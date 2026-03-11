@@ -138,7 +138,7 @@ Scope:
 - `StayCore` state machine and retry logic (`SleepWakeCoordinator`)
 - pure snapshot-set transforms (`SnapshotSetOperations`) for per-app merge and resolved-snapshot pruning
 - `WakeCycleScenariosCore` deterministic parsing/serialization helpers
-  (`WakeCycleInvocationParser`, `WakeCycleStateCodec`)
+  (`WakeCycleInvocationParser`, `WakeCycleStateCodec`, `ScenarioStateCodec`, `ScenarioReportCodec`)
 - event ordering and idempotency (duplicate wake, wake-before-sleep, repeated sleep)
 - persistence fallback behavior
 - readiness and restore retry interactions

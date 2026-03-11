@@ -73,47 +73,10 @@ struct WakeCycleScenarioRunner {
     let kicadPCBBundleIDs = ["org.kicad.pcbnew", "org.kicad.pcbnew-nightly"]
     let kicadSchematicBundleIDs = ["org.kicad.eeschema", "org.kicad.eeschema-nightly"]
 
-    struct CodableRect: Codable {
-        let x: Double
-        let y: Double
-        let width: Double
-        let height: Double
-
-        init(_ rect: CGRect) {
-            x = rect.origin.x
-            y = rect.origin.y
-            width = rect.width
-            height = rect.height
-        }
-
-        var cgRect: CGRect {
-            CGRect(x: x, y: y, width: width, height: height)
-        }
-    }
-
-    struct TrackedWindow: Codable {
-        let appBundleID: String?
-        let titleHint: String
-        let expectedDisplayID: UInt32
-        let expectedFrame: CodableRect
-    }
-
-    struct ScenarioState: Codable {
-        let scenario: String
-        let bundleID: String
-        let trackedBundleIDs: [String]?
-        let preparedAt: Date
-        let trackedWindows: [TrackedWindow]
-        let createdPaths: [String]
-    }
-
-    struct ScenarioReport: Codable {
-        let scenario: String
-        let verifiedAt: Date
-        let passed: Bool
-        let details: [String]
-    }
-
+    typealias CodableRect = WakeCycleScenariosCore.CodableRect
+    typealias TrackedWindow = WakeCycleScenariosCore.TrackedWindow
+    typealias ScenarioState = WakeCycleScenariosCore.ScenarioState
+    typealias ScenarioReport = WakeCycleScenariosCore.ScenarioReport
     typealias WakeCyclePhase = WakeCycleScenariosCore.WakeCyclePhase
     typealias WakeCycleState = WakeCycleScenariosCore.WakeCycleState
 

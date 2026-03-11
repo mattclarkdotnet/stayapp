@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import WakeCycleScenariosCore
 
 // Design intent: keep scenario orchestration readable by isolating runner-wide
 // support concerns (polling, persistence, scripting, process invocation).
@@ -29,30 +30,18 @@ extension WakeCycleScenarioRunner {
     }
 
     func persistState(_ state: ScenarioState, to url: URL) throws {
-        try writeJSON(state, to: url)
-    }
-
-    func loadState(from url: URL) throws -> ScenarioState {
-        try readJSON(ScenarioState.self, from: url)
-    }
-
-    func persistReport(_ report: ScenarioReport, to url: URL) throws {
-        try writeJSON(report, to: url)
-    }
-
-    func writeJSON<Value: Encodable>(_ value: Value, to url: URL) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(value)
+        let data = try ScenarioStateCodec.encode(state)
         try data.write(to: url, options: .atomic)
     }
 
-    func readJSON<Value: Decodable>(_ type: Value.Type, from url: URL) throws -> Value {
+    func loadState(from url: URL) throws -> ScenarioState {
         let data = try Data(contentsOf: url)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(type, from: data)
+        return try ScenarioStateCodec.decode(data)
+    }
+
+    func persistReport(_ report: ScenarioReport, to url: URL) throws {
+        let data = try ScenarioReportCodec.encode(report)
+        try data.write(to: url, options: .atomic)
     }
 
     func cleanupCreatedPaths(_ paths: [String]) {
