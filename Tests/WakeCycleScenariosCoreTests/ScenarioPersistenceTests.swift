@@ -56,4 +56,22 @@ struct ScenarioPersistenceTests {
 
         #expect(decoded == report)
     }
+
+    @Test("Scenario state decode rejects malformed payload")
+    func scenarioStateDecodeRejectsMalformedPayload() {
+        let malformed = Data("{\"bundleID\":true}".utf8)
+
+        #expect(throws: DecodingError.self) {
+            _ = try ScenarioStateCodec.decode(malformed)
+        }
+    }
+
+    @Test("Scenario report decode rejects malformed payload")
+    func scenarioReportDecodeRejectsMalformedPayload() {
+        let malformed = Data("{\"passed\":\"yes\"}".utf8)
+
+        #expect(throws: DecodingError.self) {
+            _ = try ScenarioReportCodec.decode(malformed)
+        }
+    }
 }

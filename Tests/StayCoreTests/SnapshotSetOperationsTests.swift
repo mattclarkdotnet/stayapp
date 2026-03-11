@@ -80,6 +80,38 @@ struct SnapshotSetOperationsTests {
         #expect(merged.contains(where: { $0.appPID == 77 && $0.windowIndex == 0 }))
     }
 
+    @Test("Merge drops stale fallback windows for explicitly empty apps")
+    func mergeDropsStaleFallbackForExplicitlyEmptyApps() {
+        let latest = [snapshot(bundleID: "com.apple.finder", pid: 10, index: 0)]
+        let fallback = [
+            snapshot(bundleID: "com.apple.finder", pid: 10, index: 1),
+            snapshot(bundleID: "com.mitchellh.ghostty", pid: 20, index: 0),
+            snapshot(bundleID: "com.mitchellh.ghostty", pid: 20, index: 1),
+        ]
+
+        let merged = SnapshotSetOperations.mergeLatestWithFallback(
+            latest: latest,
+            fallback: fallback,
+            explicitlyEmptyAppIdentities: ["bundle:com.mitchellh.ghostty"]
+        )
+
+        #expect(merged == latest)
+    }
+
+    @Test("Merge keeps latest snapshots when app is marked explicitly empty")
+    func mergeKeepsLatestWhenExplicitlyEmptySetContainsSameApp() {
+        let latest = [snapshot(bundleID: "com.apple.TextEdit", pid: 44, index: 0)]
+        let fallback = [snapshot(bundleID: "com.apple.TextEdit", pid: 33, index: 1)]
+
+        let merged = SnapshotSetOperations.mergeLatestWithFallback(
+            latest: latest,
+            fallback: fallback,
+            explicitlyEmptyAppIdentities: ["bundle:com.apple.TextEdit"]
+        )
+
+        #expect(merged == latest)
+    }
+
     @Test("Remove resolved snapshots preserves pending order")
     func removeResolvedSnapshotsPreservesPendingOrder() {
         let one = snapshot(bundleID: "com.apple.finder", pid: 1, index: 0)

@@ -48,4 +48,13 @@ struct CycleStateCodecTests {
         #expect(json.contains("\"phase\""))
         #expect(json.contains("\"scenario\""))
     }
+
+    @Test("Cycle state decode rejects malformed payload")
+    func decodeRejectsMalformedPayload() {
+        let malformed = Data("{\"scenario\":42}".utf8)
+
+        #expect(throws: DecodingError.self) {
+            _ = try WakeCycleStateCodec.decode(malformed)
+        }
+    }
 }

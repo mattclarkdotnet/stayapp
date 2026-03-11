@@ -12,7 +12,7 @@ Automated tests cover two layers:
 - Core tests: `Tests/StayCoreTests/SleepWakeCoordinatorTests.swift`
 - Core helper tests: `Tests/StayCoreTests/SnapshotSetOperationsTests.swift`
 - Wake-cycle core tests: `Tests/WakeCycleScenariosCoreTests/*`
-- Wake-cycle core coverage includes invocation parsing, scenario metadata, cycle-state codecs, and scenario-state/report codecs
+- Wake-cycle core coverage includes invocation parsing, scenario metadata, cycle-state codecs, scenario-state/report codecs, and malformed decode paths
 - Fixture round-trip tests: `Tests/StayIntegrationTests/WindowRoundTripTests.swift`
 - Real-app scenario tests: `Tests/StayIntegrationTests/RealAppScenarioTests.swift`
 
@@ -162,6 +162,7 @@ Add/expand tests for:
 - duplicate `didWake` or `willSleep` notifications
 - wake without prior sleep
 - partial capture merged with persisted snapshots
+- explicitly empty apps suppressing stale persisted fallback snapshots
 - readiness flapping (display online/offline transitions)
 - restore failing transiently before succeeding
 - timeout reached before readiness

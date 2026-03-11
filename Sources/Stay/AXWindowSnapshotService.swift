@@ -12,6 +12,8 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
     private static let finderBundleID = "com.apple.finder"
     private let workspace: NSWorkspace
     private let screenService: ScreenCoordinateServicing
+    private let captureStateLock = NSLock()
+    private var explicitlyEmptyAppIdentities: Set<String> = []
 
     init(
         workspace: NSWorkspace = .shared,
@@ -24,6 +26,7 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
     func capture() -> [WindowSnapshot] {
         guard AccessibilityPermission.isTrusted(prompt: false) else {
             logger.warning("Capture skipped because Accessibility permission is unavailable")
+            setExplicitlyEmptyAppIdentities([])
             return []
         }
 
@@ -36,6 +39,7 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         var allWindowServerWindowsByPID: [Int32: [WindowServerWindow]]?
 
         var snapshots: [WindowSnapshot] = []
+        var explicitEmptyAppsFromCapture: Set<String> = []
 
         for app in applications {
             let appElement = AXUIElementCreateApplication(app.processIdentifier)
@@ -214,16 +218,39 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                     "Captured \(capturedForApp, privacy: .public) snapshot(s) for app=\(app.localizedName ?? "Unknown", privacy: .public) pid=\(app.processIdentifier, privacy: .public)"
                 )
             } else {
+                explicitEmptyAppsFromCapture.insert(
+                    Self.appIdentity(bundleID: app.bundleIdentifier, pid: app.processIdentifier))
                 logger.debug(
                     "Captured 0 snapshot(s) for app=\(app.localizedName ?? "Unknown", privacy: .public) pid=\(app.processIdentifier, privacy: .public)"
                 )
             }
         }
 
+        setExplicitlyEmptyAppIdentities(explicitEmptyAppsFromCapture)
+
         logger.info(
             "Capture produced \(snapshots.count, privacy: .public) snapshot(s) across \(applications.count, privacy: .public) app(s)"
         )
         return snapshots
+    }
+
+    func explicitlyEmptyAppIdentitiesFromLastCapture() -> Set<String> {
+        captureStateLock.lock()
+        defer { captureStateLock.unlock() }
+        return explicitlyEmptyAppIdentities
+    }
+
+    private func setExplicitlyEmptyAppIdentities(_ identities: Set<String>) {
+        captureStateLock.lock()
+        explicitlyEmptyAppIdentities = identities
+        captureStateLock.unlock()
+    }
+
+    private static func appIdentity(bundleID: String?, pid: Int32) -> String {
+        if let bundleID, !bundleID.isEmpty {
+            return "bundle:\(bundleID)"
+        }
+        return "pid:\(pid)"
     }
 
     func restore(from snapshots: [WindowSnapshot]) -> WindowRestoreResult {

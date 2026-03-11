@@ -5,9 +5,11 @@ import Foundation
 enum SnapshotSetOperations {
     typealias AppIdentity = String
 
-    static func mergeLatestWithFallback(latest: [WindowSnapshot], fallback: [WindowSnapshot])
-        -> [WindowSnapshot]
-    {
+    static func mergeLatestWithFallback(
+        latest: [WindowSnapshot],
+        fallback: [WindowSnapshot],
+        explicitlyEmptyAppIdentities: Set<AppIdentity> = []
+    ) -> [WindowSnapshot] {
         guard !latest.isEmpty else {
             return fallback
         }
@@ -29,9 +31,13 @@ enum SnapshotSetOperations {
 
             // Prefer latest per-app snapshots whenever that app was seen at
             // willSleep. Only use persisted fallback snapshots when latest
-            // captured no snapshots for that app.
+            // captured no snapshots for that app. If capture explicitly
+            // observed the app with zero windows, do not resurrect stale
+            // fallback windows for that app.
             if !latestForApp.isEmpty {
                 merged.append(contentsOf: latestForApp)
+            } else if explicitlyEmptyAppIdentities.contains(key) {
+                continue
             } else if !fallbackForApp.isEmpty {
                 merged.append(contentsOf: fallbackForApp)
             }

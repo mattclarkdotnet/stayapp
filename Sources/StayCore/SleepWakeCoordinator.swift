@@ -82,14 +82,16 @@ public final class SleepWakeCoordinator {
     public func handleWillSleep() {
         // Capture as late as possible before sleep and cancel any pending restore.
         let latestSnapshots = capturing.capture()
+        let explicitlyEmptyAppIdentities = capturing.explicitlyEmptyAppIdentitiesFromLastCapture()
         let persistedSnapshots = repository.load()
         let snapshots = SnapshotSetOperations.mergeLatestWithFallback(
             latest: latestSnapshots,
-            fallback: persistedSnapshots
+            fallback: persistedSnapshots,
+            explicitlyEmptyAppIdentities: explicitlyEmptyAppIdentities
         )
 
         logger.info(
-            "Received willSleep; latest=\(latestSnapshots.count, privacy: .public) persisted=\(persistedSnapshots.count, privacy: .public) merged=\(snapshots.count, privacy: .public)"
+            "Received willSleep; latest=\(latestSnapshots.count, privacy: .public) persisted=\(persistedSnapshots.count, privacy: .public) explicitEmptyApps=\(explicitlyEmptyAppIdentities.count, privacy: .public) merged=\(snapshots.count, privacy: .public)"
         )
 
         lock.lock()

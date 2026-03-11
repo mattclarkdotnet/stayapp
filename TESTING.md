@@ -141,6 +141,7 @@ Scope:
   (`WakeCycleInvocationParser`, `WakeCycleStateCodec`, `ScenarioStateCodec`, `ScenarioReportCodec`, `WakeCycleScenario` metadata)
 - event ordering and idempotency (duplicate wake, wake-before-sleep, repeated sleep)
 - persistence fallback behavior
+- malformed persisted payload handling (decode failure paths)
 - readiness and restore retry interactions
 - seeded event-trace fuzzing with replayable seeds for coordinator invariants
 
@@ -153,6 +154,7 @@ Gate:
 
 - must pass for every change set (`swift test`)
 - for parser/state refactors, run `swift test --filter WakeCycleScenariosCoreTests`
+- for capture/fallback merge refactors, run `swift test --filter SnapshotSetOperationsTests`
 - seeded fuzz traces live in `StayCoreTests` and should stay deterministic/replayable
 
 ### 2. Integration Tests (scripted/system-level, still mostly automated)

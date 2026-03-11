@@ -5,6 +5,18 @@ import Foundation
 public protocol WindowSnapshotCapturing {
     /// Returns the currently captured window snapshots.
     func capture() -> [WindowSnapshot]
+
+    /// Returns app identities from the most recent capture pass where the app
+    /// was observed but yielded no restorable windows.
+    func explicitlyEmptyAppIdentitiesFromLastCapture() -> Set<String>
+}
+
+extension WindowSnapshotCapturing {
+    /// Default implementation when capture sources cannot report explicit
+    /// zero-window apps; coordinator will fall back to legacy merge behavior.
+    public func explicitlyEmptyAppIdentitiesFromLastCapture() -> Set<String> {
+        []
+    }
 }
 
 /// Structured restore outcome used by retry and convergence logic.

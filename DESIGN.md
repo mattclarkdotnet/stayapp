@@ -48,6 +48,9 @@ This separation keeps OS-specific behavior out of core logic and allows determin
 - Captured snapshots are merged with persisted snapshots using per-app freshness:
   keep the latest per-app set when that app was captured at `willSleep`, and only
   use persisted snapshots for apps missing entirely from latest capture.
+- Capture can also mark apps explicitly observed with zero windows; when that
+  happens, persisted fallback windows for those apps are suppressed so stale
+  windows are not resurrected on wake.
 - In-memory wake cache is overwritten on every sleep cycle (including empty
   merges) so stale snapshots from earlier cycles cannot leak into a later wake.
 - Any pending restore task is canceled.

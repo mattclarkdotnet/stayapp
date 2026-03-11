@@ -188,6 +188,50 @@ struct SleepWakeCoordinatorTests {
         #expect(restore.calls.count == 1)
     }
 
+    @Test("Explicitly empty app identities suppress stale fallback snapshots")
+    func explicitlyEmptyAppIdentitiesSuppressStaleFallbackSnapshots() {
+        let finder = sampleSnapshot(
+            pid: 101,
+            bundleID: "com.apple.finder",
+            appName: "Finder",
+            title: "Finder Window",
+            index: 0
+        )
+        let staleGhostty = sampleSnapshot(
+            pid: 202,
+            bundleID: "com.mitchellh.ghostty",
+            appName: "Ghostty",
+            title: "Ghostty Window",
+            index: 0
+        )
+
+        let capture = StubCaptureService()
+        capture.nextSnapshots = [finder]
+        capture.explicitlyEmptyAppIdentities = ["bundle:com.mitchellh.ghostty"]
+
+        let restore = SpyRestoreService()
+        let repository = InMemoryRepository()
+        repository.saved = [finder, staleGhostty]
+        let scheduler = ManualScheduler()
+
+        let coordinator = SleepWakeCoordinator(
+            capturing: capture,
+            restoring: restore,
+            repository: repository,
+            scheduler: scheduler,
+            wakeDelay: 0
+        )
+
+        coordinator.handleWillSleep()
+        #expect(repository.saved == [finder])
+
+        coordinator.handleDidWake()
+        scheduler.runAll()
+
+        #expect(restore.calls.count == 1)
+        #expect(restore.calls[0] == [finder])
+    }
+
     @Test("Restore waits until readiness checker reports ready")
     func restoreWaitsUntilReady() {
         let snapshots = [sampleSnapshot(title: "Chrome", index: 0)]
@@ -1094,10 +1138,15 @@ struct SleepWakeCoordinatorTests {
 private final class StubCaptureService: WindowSnapshotCapturing {
     var captureCount = 0
     var nextSnapshots: [WindowSnapshot] = []
+    var explicitlyEmptyAppIdentities: Set<String> = []
 
     func capture() -> [WindowSnapshot] {
         captureCount += 1
         return nextSnapshots
+    }
+
+    func explicitlyEmptyAppIdentitiesFromLastCapture() -> Set<String> {
+        explicitlyEmptyAppIdentities
     }
 }
 
