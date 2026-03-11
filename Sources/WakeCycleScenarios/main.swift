@@ -576,8 +576,7 @@ struct WakeCycleScenarioRunner {
 
         try persistState(state, to: stateURL(for: scenario))
 
-        print("Prepared wake-cycle scenario '\(scenario.rawValue)' for \(scenario.appName).")
-        print("State file: \(stateURL(for: scenario).path)")
+        printPreparedScenarioHeader(scenario: scenario)
         print("Window 1 (\(titleOne)) -> display \(display1.id)")
         print("Window 2 (\(titleTwo)) -> display \(display2.id)")
 
@@ -685,8 +684,7 @@ struct WakeCycleScenarioRunner {
         )
         try persistState(state, to: stateURL(for: scenario))
 
-        print("Prepared wake-cycle scenario '\(scenario.rawValue)' for \(scenario.appName).")
-        print("State file: \(stateURL(for: scenario).path)")
+        printPreparedScenarioHeader(scenario: scenario)
         print("Main window (\(mainTitleHint)) -> primary display \(primaryDisplay.id)")
         for child in tracked.children {
             print(
@@ -811,8 +809,7 @@ struct WakeCycleScenarioRunner {
         )
         try persistState(state, to: stateURL(for: scenario))
 
-        print("Prepared wake-cycle scenario '\(scenario.rawValue)' for KiCad.")
-        print("State file: \(stateURL(for: scenario).path)")
+        printPreparedScenarioHeader(scenario: scenario)
         print("Main window (\(mainTitleHint)) -> primary display \(primaryDisplay.id)")
         print("PCB window (\(pcbTitleHint)) -> primary display \(primaryDisplay.id)")
         print(
@@ -943,6 +940,11 @@ struct WakeCycleScenarioRunner {
         print("  swift run WakeCycleScenarios verify \(scenario.rawValue)")
         Thread.sleep(forTimeInterval: 3)
         _ = runCommand("/usr/bin/pmset", ["sleepnow"])
+    }
+
+    private func printPreparedScenarioHeader(scenario: Scenario) {
+        print("Prepared wake-cycle scenario '\(scenario.rawValue)' for \(scenario.appName).")
+        print("State file: \(stateURL(for: scenario).path)")
     }
 
     private func persistCycleState(_ state: WakeCycleState, to url: URL) throws {
