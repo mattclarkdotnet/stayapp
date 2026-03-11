@@ -228,6 +228,19 @@ Wake-cycle integration uses the `WakeCycleScenarios` executable:
   app/window readiness (tracked windows must be discoverable and matchable), perturb one
   tracked window, run restore attempts, then verify final display+frame alignment
 - `verify ... --check-only`: passive post-wake validation without perturb/restore
+- `cycle finder|app|freecad|kicad`: full-cycle mode for sleep/wake automation
+
+`cycle` execution model:
+
+- The runner process stays alive; on sleep it is suspended by macOS and resumes with the
+  same PID after wake.
+- Before sleeping, `cycle` persists a cycle-state file.
+- After wake/login, the runner waits for wake/session signals (`didWake`,
+  `screensDidWake`, `sessionDidBecomeActive`) and then runs `verify` automatically
+  using extended readiness timeouts.
+- A LaunchAgent fallback is available as an opt-in path (`STAY_CYCLE_ENABLE_LAUNCH_AGENT=1`),
+  but is disabled by default.
+- Successful completion writes the standard scenario report and removes temporary cycle-state data.
 
 Physical sleep/display wake timing is intentionally left for manual/QA validation on real hardware.
 

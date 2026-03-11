@@ -165,12 +165,16 @@ How:
 - run `swift test --filter StayIntegrationTests.RealAppScenarioTests`
 - tests launch real apps (Finder/TextEdit/FreeCAD/KiCad), move real windows across screens, then run capture/restore
 - use logs (`log stream --predicate 'subsystem == "com.stay.app"'`) when investigating failures
-- for full sleep/wake scenarios, use this exact order:
+- for full sleep/wake scenarios, prefer single-command cycle mode:
+  1. `swift run WakeCycleScenarios cycle finder|app|freecad|kicad`
+  2. let the machine sleep
+  3. wake/unlock
+  4. runner auto-runs verify and writes report
+- manual split flow remains available for debugging:
   1. `swift run WakeCycleScenarios prepare finder|app|freecad|kicad`
-  2. let the machine sleep and wake
-  3. log in after wake
-  4. `swift run WakeCycleScenarios verify finder|app|freecad|kicad` (waits for display + app/window readiness, then perturbs one window, restores, and verifies display+frame)
-  5. optional passive check: `swift run WakeCycleScenarios verify finder|app|freecad|kicad --check-only`
+  2. let the machine sleep/wake and log in
+  3. `swift run WakeCycleScenarios verify finder|app|freecad|kicad`
+  4. optional passive check: `swift run WakeCycleScenarios verify finder|app|freecad|kicad --check-only`
 
 Limitations:
 

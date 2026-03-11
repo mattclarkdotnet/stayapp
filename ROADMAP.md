@@ -18,19 +18,28 @@
 
 ## Next
 
-1. Multiple workspaces
+1. Code cleanup
+- Ensure consistency between docs and code by updating the docs to match the code (IMPORTANT! the docs should be updated to make things consistent, not the code)
+- Factor out common functionality to separate classes/modules
+- 
+- Add type aliases for common types
+- Improve unit test coverage
+- Add comments to all methods (not docstrings)
+- Add docstrings to all public methods
 
 ## Later
 
-1. Full screen apps
+1. Multiple workspaces
+- Apps on secondary workspaces should also have their windows restored
+2. Full screen apps
 - full screen apps should remain on their target display, Stay.app should not interfere.
-2. Changes in monitor configuration between sleep and wake
+3. Changes in monitor configuration between sleep and wake
 - it's OK to do nothing, we just don't want to crash or cause any unexpected window movements
-3. Productization
+4. Productization
 - App icon and branding assets.
 - Start-on-login hardening.
 - Packaging/signing/notarization/distribution workflows.
-4. Complex wake ordering is handled explicitly
+5. Complex wake ordering is handled explicitly
 - Handle screens waking in different orders.
 - Handle login occurring while only one screen is active.
 - Implement this with explicit state machines in `StayCore` (no ad-hoc procedural branching).

@@ -28,33 +28,30 @@ swift test --filter StayIntegrationTests.RealAppScenarioTests
 Wake-cycle scenarios (with real sleep/wake) use the runner executable:
 
 ```bash
-# Finder scenario
+# Full-cycle automation (preferred):
+swift run WakeCycleScenarios cycle finder
+swift run WakeCycleScenarios cycle app
+swift run WakeCycleScenarios cycle freecad
+swift run WakeCycleScenarios cycle kicad
+
+# Manual split flow (debugging):
 swift run WakeCycleScenarios prepare finder
-# ...machine sleeps, wakes, and you log in...
 swift run WakeCycleScenarios verify finder
-
-# TextEdit scenario
-swift run WakeCycleScenarios prepare app
-# ...machine sleeps, wakes, and you log in...
-swift run WakeCycleScenarios verify app
-
-# FreeCAD scenario
-swift run WakeCycleScenarios prepare freecad
-# ...machine sleeps, wakes, and you log in...
-swift run WakeCycleScenarios verify freecad
-
-# KiCad scenario
-swift run WakeCycleScenarios prepare kicad
-# ...machine sleeps, wakes, and you log in...
-swift run WakeCycleScenarios verify kicad
 ```
 
-Required order for wake-cycle scenarios:
+Required order for manual split wake-cycle scenarios:
 
 1. Run `prepare` for the scenario (`finder`, `app`, `freecad`, or `kicad`).
 2. Let the machine complete the sleep/wake cycle.
 3. Log in after wake.
 4. Run `verify` for the same scenario.
+
+Required order for full-cycle automation:
+
+1. Run `cycle` for the scenario (`finder`, `app`, `freecad`, or `kicad`).
+2. Let the machine sleep.
+3. Wake/unlock the machine.
+4. Runner automatically continues with verify and writes the report.
 
 Optional passive check:
 
@@ -64,6 +61,14 @@ swift run WakeCycleScenarios verify app --check-only
 swift run WakeCycleScenarios verify freecad --check-only
 swift run WakeCycleScenarios verify kicad --check-only
 ```
+
+## Full-Cycle Automation Behavior
+
+- `cycle` keeps the runner alive across sleep/wake by remaining in-process; macOS suspends and resumes it.
+- After wake/login, `cycle` waits for wake/session signals and then runs `verify` automatically.
+- `verify` still enforces display readiness and app/window readiness before perturb/restore.
+- LaunchAgent fallback support exists but is opt-in (`STAY_CYCLE_ENABLE_LAUNCH_AGENT=1`).
+- The only required user action is waking/unlocking the machine.
 
 ## Real-App Scenario Prerequisites
 
@@ -78,7 +83,7 @@ swift run WakeCycleScenarios verify kicad --check-only
 - Scenario 1.3 uses position-only moves for FreeCAD windows so tool-window sizes are preserved.
 - Running these tests will visibly move windows across screens.
 - TextEdit, FreeCAD, and KiCad real-app scenarios explicitly quit those apps during cleanup.
-- For wake-cycle scenarios, run `prepare`, let the machine sleep/wake, log in, then run `verify`.
+- For wake-cycle scenarios, prefer `cycle`; use `prepare`/`verify` split flow for debugging.
 - `verify` waits for display and app/window readiness first, then perturbs one tracked window, restores, and validates display and frame placement.
 - Use `verify --check-only` when you only want passive post-wake validation.
 

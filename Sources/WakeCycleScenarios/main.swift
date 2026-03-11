@@ -8,6 +8,8 @@ struct WakeCycleScenarioRunner {
     enum Command: String {
         case prepare
         case verify
+        case cycle
+        case resume
     }
 
     enum Scenario: String {
@@ -111,6 +113,47 @@ struct WakeCycleScenarioRunner {
         let details: [String]
     }
 
+    private enum WakeCyclePhase: String, Codable {
+        case prepared
+        case armedForWake
+        case resumedInRunner
+        case verifying
+        case completed
+        case failed
+    }
+
+    private struct WakeCycleState: Codable {
+        var scenario: String
+        var createdAt: Date
+        var executablePath: String
+        var workingDirectoryPath: String
+        var launchAgentLabel: String
+        var launchAgentPlistPath: String
+        var sleepIssuedAt: Date?
+        var phase: WakeCyclePhase
+    }
+
+    private struct VerifyTimingOptions {
+        let displayReadinessTimeout: TimeInterval
+        let appWindowReadinessTimeout: TimeInterval
+        let restoreTimeout: TimeInterval
+        let verificationTimeout: TimeInterval
+
+        static let manual = VerifyTimingOptions(
+            displayReadinessTimeout: 45,
+            appWindowReadinessTimeout: 25,
+            restoreTimeout: 20,
+            verificationTimeout: 20
+        )
+
+        static let wakeCycle = VerifyTimingOptions(
+            displayReadinessTimeout: 180,
+            appWindowReadinessTimeout: 600,
+            restoreTimeout: 25,
+            verificationTimeout: 25
+        )
+    }
+
     struct LiveWindow {
         let element: AXUIElement
         let appPID: Int32
@@ -156,7 +199,24 @@ struct WakeCycleScenarioRunner {
                         "unknown verify option(s): \(unknown.joined(separator: ", "))")
                 }
                 let checkOnly = options.contains("--check-only")
-                try verify(scenario: scenario, checkOnly: checkOnly)
+                try verify(
+                    scenario: scenario,
+                    checkOnly: checkOnly,
+                    timings: .manual,
+                    skipPrerequisiteCheck: false
+                )
+            case .cycle:
+                guard options.isEmpty else {
+                    throw RunnerError.failed(
+                        "unknown cycle option(s): \(options.joined(separator: ", "))")
+                }
+                try cycle(scenario: scenario)
+            case .resume:
+                guard options.isEmpty else {
+                    throw RunnerError.failed(
+                        "unknown resume option(s): \(options.joined(separator: ", "))")
+                }
+                try resume(scenario: scenario)
             }
             return 0
         } catch {
@@ -171,6 +231,7 @@ struct WakeCycleScenarioRunner {
             Usage:
               swift run WakeCycleScenarios prepare <finder|app|freecad|kicad> [--no-sleep]
               swift run WakeCycleScenarios verify <finder|app|freecad|kicad> [--check-only]
+              swift run WakeCycleScenarios cycle <finder|app|freecad|kicad>
 
             Notes:
               - Requires exactly two external displays and no built-in display.
@@ -178,6 +239,8 @@ struct WakeCycleScenarioRunner {
               - prepare creates/positions real app windows and optionally puts the Mac to sleep.
               - verify defaults to: perturb one tracked window, restore tracked windows, then verify.
               - verify --check-only performs passive post-wake validation with no perturb/restore.
+              - cycle runs prepare, sleeps the machine, waits for wake/session readiness, then auto-runs verify.
+              - optional fallback: set STAY_CYCLE_ENABLE_LAUNCH_AGENT=1 to enable LaunchAgent-based resume.
             """)
     }
 
@@ -193,6 +256,146 @@ struct WakeCycleScenarioRunner {
 
     private func reportURL(for scenario: Scenario) -> URL {
         scenarioDirectory.appendingPathComponent("\(scenario.rawValue)-report.json")
+    }
+
+    private func cycleStateURL(for scenario: Scenario) -> URL {
+        scenarioDirectory.appendingPathComponent("\(scenario.rawValue)-cycle.json")
+    }
+
+    private func launchAgentLabel(for scenario: Scenario) -> String {
+        "com.stayapp.wakecyclescenarios.\(scenario.rawValue)"
+    }
+
+    private func launchAgentPlistURL(for scenario: Scenario) -> URL {
+        fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents", isDirectory: true)
+            .appendingPathComponent("\(launchAgentLabel(for: scenario)).plist")
+    }
+
+    private func cycle(scenario: Scenario) throws {
+        try ensurePrerequisites()
+        try prepare(scenario: scenario, shouldSleep: false)
+
+        let cycleURL = cycleStateURL(for: scenario)
+        let launchAgentFallbackEnabled = launchAgentFallbackIsEnabled()
+        var cycleState = WakeCycleState(
+            scenario: scenario.rawValue,
+            createdAt: Date(),
+            executablePath: resolvedExecutablePath(),
+            workingDirectoryPath: fileManager.currentDirectoryPath,
+            launchAgentLabel: launchAgentLabel(for: scenario),
+            launchAgentPlistPath: launchAgentPlistURL(for: scenario).path,
+            sleepIssuedAt: nil,
+            phase: .prepared
+        )
+        try persistCycleState(cycleState, to: cycleURL)
+        if launchAgentFallbackEnabled {
+            try installWakeResumeLaunchAgent(for: scenario, state: cycleState)
+        } else {
+            print(
+                "Cycle mode: LaunchAgent fallback is disabled (set STAY_CYCLE_ENABLE_LAUNCH_AGENT=1 to enable)."
+            )
+            uninstallWakeResumeLaunchAgent(for: scenario, state: cycleState)
+        }
+
+        cycleState.phase = .armedForWake
+        cycleState.sleepIssuedAt = Date()
+        try persistCycleState(cycleState, to: cycleURL)
+
+        print("Cycle mode: sleeping machine in 3 seconds.")
+        print("After wake/login, this runner will continue automatically.")
+        Thread.sleep(forTimeInterval: 3)
+        _ = runCommand("/usr/bin/pmset", ["sleepnow"])
+
+        print("Cycle mode: waiting for wake/session signals.")
+        _ = waitForWakeOrSessionSignal(timeout: 20)
+
+        cycleState.phase = .resumedInRunner
+        try persistCycleState(cycleState, to: cycleURL)
+
+        do {
+            try runAutomatedVerifyAfterWake(
+                scenario: scenario,
+                timings: .wakeCycle,
+                source: "cycle-runner",
+                skipPrerequisiteCheck: true
+            )
+            cycleState.phase = .completed
+            try persistCycleState(cycleState, to: cycleURL)
+            if launchAgentFallbackEnabled {
+                uninstallWakeResumeLaunchAgent(for: scenario, state: cycleState)
+            }
+            try? fileManager.removeItem(at: cycleURL)
+        } catch {
+            cycleState.phase = .failed
+            try? persistCycleState(cycleState, to: cycleURL)
+            if launchAgentFallbackEnabled {
+                uninstallWakeResumeLaunchAgent(for: scenario, state: cycleState)
+            }
+            throw error
+        }
+    }
+
+    private func resume(scenario: Scenario) throws {
+        try ensurePrerequisites()
+        let cycleURL = cycleStateURL(for: scenario)
+
+        guard var cycleState = try? loadCycleState(from: cycleURL) else {
+            print(
+                "Resume mode: no cycle state found for scenario '\(scenario.rawValue)'; nothing to do."
+            )
+            return
+        }
+
+        guard cycleState.phase == .armedForWake else {
+            print("Resume mode: cycle phase '\(cycleState.phase.rawValue)' is not resumable.")
+            return
+        }
+
+        if !canResumeVerify(for: cycleState) {
+            print("Resume mode: wake not yet confirmed; leaving cycle armed.")
+            return
+        }
+
+        cycleState.phase = .verifying
+        try persistCycleState(cycleState, to: cycleURL)
+
+        do {
+            try runAutomatedVerifyAfterWake(
+                scenario: scenario,
+                timings: .wakeCycle,
+                source: "launch-agent",
+                skipPrerequisiteCheck: false
+            )
+            cycleState.phase = .completed
+            try persistCycleState(cycleState, to: cycleURL)
+            uninstallWakeResumeLaunchAgent(for: scenario, state: cycleState)
+            try? fileManager.removeItem(at: cycleURL)
+        } catch {
+            cycleState.phase = .failed
+            try? persistCycleState(cycleState, to: cycleURL)
+            uninstallWakeResumeLaunchAgent(for: scenario, state: cycleState)
+            throw error
+        }
+    }
+
+    private func runAutomatedVerifyAfterWake(
+        scenario: Scenario,
+        timings: VerifyTimingOptions,
+        source: String,
+        skipPrerequisiteCheck: Bool
+    ) throws {
+        print("Auto-verify start (source=\(source), scenario=\(scenario.rawValue)).")
+        try verify(
+            scenario: scenario,
+            checkOnly: false,
+            timings: timings,
+            skipPrerequisiteCheck: skipPrerequisiteCheck
+        )
+    }
+
+    private func launchAgentFallbackIsEnabled() -> Bool {
+        ProcessInfo.processInfo.environment["STAY_CYCLE_ENABLE_LAUNCH_AGENT"] == "1"
     }
 
     private func prepare(scenario: Scenario, shouldSleep: Bool) throws {
@@ -565,8 +768,18 @@ struct WakeCycleScenarioRunner {
         }
     }
 
-    private func verify(scenario: Scenario, checkOnly: Bool) throws {
-        try ensurePrerequisites()
+    private func verify(
+        scenario: Scenario,
+        checkOnly: Bool,
+        timings: VerifyTimingOptions,
+        skipPrerequisiteCheck: Bool
+    ) throws {
+        if skipPrerequisiteCheck {
+            try fileManager.createDirectory(
+                at: scenarioDirectory, withIntermediateDirectories: true)
+        } else {
+            try ensurePrerequisites()
+        }
         let displays = try validatedExternalDisplays()
         let state = try loadState(from: stateURL(for: scenario))
 
@@ -584,7 +797,10 @@ struct WakeCycleScenarioRunner {
 
         let requiredDisplays = Set(state.trackedWindows.map(\.expectedDisplayID))
         print("Waiting for displays to be online/awake: \(requiredDisplays.sorted())")
-        guard waitForDisplayReadinessWithProgress(requiredDisplays, timeout: 45) else {
+        guard
+            waitForDisplayReadinessWithProgress(
+                requiredDisplays, timeout: timings.displayReadinessTimeout)
+        else {
             throw RunnerError.failed("required displays not ready after wake")
         }
 
@@ -596,7 +812,7 @@ struct WakeCycleScenarioRunner {
             waitForAppWindowReadinessWithProgress(
                 trackedWindows: state.trackedWindows,
                 pids: pids,
-                timeout: 25
+                timeout: timings.appWindowReadinessTimeout
             )
         else {
             throw RunnerError.failed("app windows not ready for verification after wake")
@@ -623,7 +839,7 @@ struct WakeCycleScenarioRunner {
                 scenario: scenario,
                 trackedWindows: state.trackedWindows,
                 pids: pids,
-                timeout: 20
+                timeout: timings.restoreTimeout
             )
         }
 
@@ -631,7 +847,7 @@ struct WakeCycleScenarioRunner {
             scenario: scenario,
             trackedWindows: state.trackedWindows,
             pids: pids,
-            timeout: 20
+            timeout: timings.verificationTimeout
         )
 
         let details: [String]
@@ -663,6 +879,163 @@ struct WakeCycleScenarioRunner {
 
         cleanupCreatedPaths(state.createdPaths)
         print("Report file: \(reportURL(for: scenario).path)")
+    }
+
+    private func persistCycleState(_ state: WakeCycleState, to url: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(state)
+        try data.write(to: url, options: .atomic)
+    }
+
+    private func loadCycleState(from url: URL) throws -> WakeCycleState {
+        let data = try Data(contentsOf: url)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(WakeCycleState.self, from: data)
+    }
+
+    private func resolvedExecutablePath() -> String {
+        guard let rawPath = args.first else {
+            return fileManager.currentDirectoryPath
+        }
+        if rawPath.hasPrefix("/") {
+            return rawPath
+        }
+        return URL(
+            fileURLWithPath: rawPath,
+            relativeTo: URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true)
+        ).standardizedFileURL.path
+    }
+
+    private func waitForWakeOrSessionSignal(timeout: TimeInterval) -> String? {
+        final class SignalBox: @unchecked Sendable {
+            private let lock = NSLock()
+            private var value: String?
+
+            func setIfEmpty(_ newValue: String) {
+                lock.lock()
+                defer { lock.unlock() }
+                if value == nil {
+                    value = newValue
+                }
+            }
+
+            func read() -> String? {
+                lock.lock()
+                defer { lock.unlock() }
+                return value
+            }
+        }
+
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        let signalBox = SignalBox()
+
+        let observers: [Any] = [
+            workspaceCenter.addObserver(
+                forName: NSWorkspace.didWakeNotification,
+                object: nil,
+                queue: nil
+            ) { _ in
+                signalBox.setIfEmpty("didWake")
+            },
+            workspaceCenter.addObserver(
+                forName: NSWorkspace.screensDidWakeNotification,
+                object: nil,
+                queue: nil
+            ) { _ in
+                signalBox.setIfEmpty("screensDidWake")
+            },
+            workspaceCenter.addObserver(
+                forName: NSWorkspace.sessionDidBecomeActiveNotification,
+                object: nil,
+                queue: nil
+            ) { _ in
+                signalBox.setIfEmpty("sessionDidBecomeActive")
+            },
+        ]
+        defer {
+            for observer in observers {
+                workspaceCenter.removeObserver(observer)
+            }
+        }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let observedSignal = signalBox.read() {
+                print("Wake/session signal observed: \(observedSignal)")
+                return observedSignal
+            }
+            sleepRunLoop(0.2)
+        }
+
+        print("Wake/session signal wait timed out; continuing with readiness checks.")
+        return nil
+    }
+
+    private func canResumeVerify(for state: WakeCycleState) -> Bool {
+        guard let sleepIssuedAt = state.sleepIssuedAt else {
+            return false
+        }
+
+        // LaunchAgent is loaded immediately; avoid resuming verify before the sleep has actually happened.
+        let elapsed = Date().timeIntervalSince(sleepIssuedAt)
+        return elapsed >= 45
+    }
+
+    private func installWakeResumeLaunchAgent(for scenario: Scenario, state: WakeCycleState) throws
+    {
+        let plistURL = URL(fileURLWithPath: state.launchAgentPlistPath)
+        let launchAgentsDirectory = plistURL.deletingLastPathComponent()
+        try fileManager.createDirectory(
+            at: launchAgentsDirectory, withIntermediateDirectories: true)
+
+        let stdoutPath = scenarioDirectory.appendingPathComponent(
+            "\(scenario.rawValue)-cycle-launchagent.out.log"
+        ).path
+        let stderrPath = scenarioDirectory.appendingPathComponent(
+            "\(scenario.rawValue)-cycle-launchagent.err.log"
+        ).path
+
+        let plist: [String: Any] = [
+            "Label": state.launchAgentLabel,
+            "ProgramArguments": [state.executablePath, "resume", scenario.rawValue],
+            "WorkingDirectory": state.workingDirectoryPath,
+            "RunAtLoad": true,
+            "KeepAlive": false,
+            "StartInterval": 20,
+            "LimitLoadToSessionType": "Aqua",
+            "StandardOutPath": stdoutPath,
+            "StandardErrorPath": stderrPath,
+        ]
+
+        let plistData = try PropertyListSerialization.data(
+            fromPropertyList: plist,
+            format: .xml,
+            options: 0
+        )
+        try plistData.write(to: plistURL, options: .atomic)
+
+        let domain = "gui/\(getuid())"
+        _ = runCommand("/bin/launchctl", ["bootout", domain, state.launchAgentLabel])
+
+        let bootstrapStatus = runCommand("/bin/launchctl", ["bootstrap", domain, plistURL.path])
+        if bootstrapStatus != 0 {
+            print(
+                "warning: launchctl bootstrap failed for fallback resume agent (status=\(bootstrapStatus)); cycle runner will continue without agent fallback"
+            )
+        } else {
+            print("Installed wake-cycle fallback LaunchAgent: \(state.launchAgentLabel)")
+        }
+    }
+
+    private func uninstallWakeResumeLaunchAgent(for scenario: Scenario, state: WakeCycleState) {
+        _ = scenario
+        let plistURL = URL(fileURLWithPath: state.launchAgentPlistPath)
+        let domain = "gui/\(getuid())"
+        _ = runCommand("/bin/launchctl", ["bootout", domain, state.launchAgentLabel])
+        try? fileManager.removeItem(at: plistURL)
     }
 
     private func ensurePrerequisites() throws {
