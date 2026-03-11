@@ -11,9 +11,10 @@
 
 ## Now
 
-1. Apps with child windows
-- FreeCAD
-- Kicad
+1. Full-cycle sleep/wake scenario automation (wake-only human intervention)
+- For wake-cycle scenarios, eliminate manual post-wake `verify` commands.
+- The only required human action should be waking/unlocking the Mac.
+- After wake/login, the test harness should automatically locate tracked windows, run restore/verify, and write a machine-readable report.
 
 ## Next
 
@@ -37,8 +38,11 @@
 
 ## Completed
 
-1. Basic scenarios work across wake cycles
+1. Apps with child windows
+- FreeCAD child windows and KiCad split-editor windows restore correctly in automated scenarios.
+
+2. Basic scenarios work across wake cycles
 - Validated with real `WakeCycleScenarios` runs for both `finder` and `app`.
 
-2. Basic scenarios are automated
+3. Basic scenarios are automated
 - Automated scenarios in `Tests/SCENARIOS.md` use real apps and move real windows.
