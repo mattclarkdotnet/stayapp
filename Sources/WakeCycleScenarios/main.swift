@@ -156,6 +156,7 @@ struct WakeCycleScenarioRunner {
 
     private typealias ScreenDisplay = (screen: NSScreen, id: UInt32)
     private typealias TitleDisplayExpectation = (titleHint: String, displayID: UInt32)
+    private typealias BundlePID = (bundleID: String, pid: Int32)
 
     struct LiveWindow {
         let element: AXUIElement
@@ -1203,9 +1204,7 @@ struct WakeCycleScenarioRunner {
         try bundleIDs.map { try ensureAppRunning(bundleID: $0) }
     }
 
-    private func ensureAppRunning(bundleIDs: [String], appName: String) throws -> (
-        bundleID: String, pid: Int32
-    ) {
+    private func ensureAppRunning(bundleIDs: [String], appName: String) throws -> BundlePID {
         if let resolved = resolveRunningOrLaunchPID(bundleIDs: bundleIDs) {
             return resolved
         }
@@ -1213,7 +1212,7 @@ struct WakeCycleScenarioRunner {
         throw RunnerError.failed("could not launch \(appName) using bundle IDs \(bundleIDs)")
     }
 
-    private func ensureAppRunning(scenario: Scenario) throws -> (bundleID: String, pid: Int32) {
+    private func ensureAppRunning(scenario: Scenario) throws -> BundlePID {
         if let resolved = resolveRunningOrLaunchPID(bundleIDs: scenario.candidateBundleIDs) {
             return resolved
         }
@@ -1230,7 +1229,7 @@ struct WakeCycleScenarioRunner {
         return resolved.pid
     }
 
-    private func resolveRunningOrLaunchPID(bundleIDs: [String]) -> (bundleID: String, pid: Int32)? {
+    private func resolveRunningOrLaunchPID(bundleIDs: [String]) -> BundlePID? {
         for bundleID in bundleIDs {
             if let running = runningApplication(bundleID: bundleID) {
                 _ = running.activate()
