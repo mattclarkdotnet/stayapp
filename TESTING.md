@@ -120,6 +120,8 @@ Each fixture should include expected capture output and expected restore result
 - Available windows must still restore when some app windows are deferred.
 - Re-running restore on an already-restored layout must be a no-op (no extra moves).
 - Deferred-only residuals must park without interval loops and retry on environment change.
+- Inactive-workspace deferred snapshots must retry only after `activeSpaceDidChange`,
+  while non-workspace deferrals can retry on generic environment-change signals.
 - Matching must remain stable when titles are missing (untitled windows).
 
 ### Delivery order

@@ -13,9 +13,10 @@
 - Scenario 1.1 / 1.2 (`finder`, `app` no-sleep): keep current behavior unchanged on a single active workspace while proving restore remains idempotent.
 - Scenario 1.3 / 1.4 (`freecad`, `kicad` no-sleep): preserve child-window/split-editor matching while introducing workspace-scoped retry state.
 - Scenario 2.1-2.4 (`cycle` wake/sleep): extend wake orchestration so deferred windows are partitioned by active workspace and retried only when relevant workspace signals arrive.
-- Implementation detail: add a workspace-aware pending model in `StayCore` that tracks unresolved snapshots by workspace identity (including “unknown workspace”), with explicit transitions for `didWake`, `activeSpaceDidChange`, timeout, and completion.
+- Working assumption: windows keep their workspace identity across sleep/wake; restore logic only needs to react to active-workspace visibility changes at restore time.
+- Implementation detail: add a workspace-aware pending model in `StayCore` that partitions unresolved snapshots into `active-workspace` and `inactive-workspace` subsets, with explicit transitions for `didWake`, `activeSpaceDidChange`, timeout, and completion.
 - Implementation detail: extend restore result/accounting to report workspace progress (resolved now vs deferred to other workspace) so coordinator decisions are based on typed state rather than implicit counts.
-- Implementation detail: keep all workspace policy in `StayCore`; `Stay` layer only emits environment/workspace signals and workspace identity snapshots.
+- Implementation detail: keep all workspace policy in `StayCore`; `Stay` layer only emits environment/workspace-change signals.
 
 ## Exit criteria
 

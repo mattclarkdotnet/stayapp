@@ -32,8 +32,11 @@ public final class SleepWakeCoordinator {
     private var isSleeping = false
     // Last capture payload to restore after wake; overwritten on every sleep.
     private var cachedSnapshots: [WindowSnapshot] = []
-    // Pending work for the current wake cycle.
+    // Unresolved work for the current wake cycle.
     private var pendingRestoreSnapshots: [WindowSnapshot] = []
+    // Subset of pending snapshots known to belong to inactive workspaces.
+    // These are re-queued only after `activeSpaceDidChange`.
+    private var inactiveWorkspacePendingSnapshots: [WindowSnapshot] = []
     private var isAwaitingPostWakeRestore = false
     private var restoreDeadline: Date?
     private var restoreTask: CancellableTask?
@@ -136,6 +139,7 @@ public final class SleepWakeCoordinator {
 
         isAwaitingPostWakeRestore = true
         pendingRestoreSnapshots = snapshots
+        inactiveWorkspacePendingSnapshots = []
         restoreDeadline = Date().addingTimeInterval(maxWaitAfterWake)
         resetRestoreAttemptTracking()
         clearDeferredExposureWait()
@@ -154,6 +158,15 @@ public final class SleepWakeCoordinator {
         guard !isSleeping, isAwaitingPostWakeRestore else {
             lock.unlock()
             return
+        }
+
+        if kind == .activeSpaceDidChange {
+            let promotedCount = promoteInactiveWorkspaceSnapshotsToActive()
+            if promotedCount > 0 {
+                logger.debug(
+                    "Promoted \(promotedCount, privacy: .public) inactive-workspace snapshot(s) into active restore queue after space change"
+                )
+            }
         }
 
         if isWaitingForDeferredSpaceExposure,
@@ -191,7 +204,20 @@ public final class SleepWakeCoordinator {
             return
         }
 
-        let snapshots = pendingRestoreSnapshots
+        let snapshots = activeWorkspacePendingSnapshots()
+        if snapshots.isEmpty {
+            if !inactiveWorkspacePendingSnapshots.isEmpty {
+                enterDeferredEnvironmentWait(requiresActiveSpaceChange: true)
+                lock.unlock()
+                return
+            }
+
+            logger.info("Restore cycle completed with no pending snapshots")
+            clearRestoreState()
+            lock.unlock()
+            return
+        }
+
         let timedOut: Bool
         if isWaitingForDeferredSpaceExposure {
             timedOut = false
@@ -204,7 +230,7 @@ public final class SleepWakeCoordinator {
         // Keep retrying until displays are ready; timeout prevents indefinite waiting.
         let ready = readinessChecker.isReady(toRestore: snapshots)
         logger.debug(
-            "Restore attempt check: ready=\(ready, privacy: .public) timedOut=\(timedOut, privacy: .public) deferredSpaceWait=\(self.isWaitingForDeferredSpaceExposure, privacy: .public) snapshots=\(snapshots.count, privacy: .public)"
+            "Restore attempt check: ready=\(ready, privacy: .public) timedOut=\(timedOut, privacy: .public) deferredSpaceWait=\(self.isWaitingForDeferredSpaceExposure, privacy: .public) activeSnapshots=\(snapshots.count, privacy: .public) inactiveWorkspaceSnapshots=\(self.inactiveWorkspacePendingSnapshots.count, privacy: .public)"
         )
 
         if !ready && !timedOut {
@@ -226,7 +252,7 @@ public final class SleepWakeCoordinator {
         lock.unlock()
         let restoreResult = restoring.restore(from: snapshots)
         logger.info(
-            "Restore invocation finished with complete=\(restoreResult.isComplete, privacy: .public) moved=\(restoreResult.movedWindowCount, privacy: .public) aligned=\(restoreResult.alreadyAlignedCount, privacy: .public) failures=\(restoreResult.recoverableFailureCount, privacy: .public) deferred=\(restoreResult.deferredSnapshotCount, privacy: .public)"
+            "Restore invocation finished with complete=\(restoreResult.isComplete, privacy: .public) moved=\(restoreResult.movedWindowCount, privacy: .public) aligned=\(restoreResult.alreadyAlignedCount, privacy: .public) failures=\(restoreResult.recoverableFailureCount, privacy: .public) deferred=\(restoreResult.deferredSnapshotCount, privacy: .public) deferredInactiveWorkspace=\(restoreResult.deferredInactiveWorkspaceSnapshots.count, privacy: .public)"
         )
 
         lock.lock()
@@ -236,12 +262,18 @@ public final class SleepWakeCoordinator {
             return
         }
 
-        if restoreResult.isComplete {
-            logger.info("Restore cycle completed successfully")
-            clearRestoreState()
-            lock.unlock()
-            return
+        let normalizedResolvedSnapshots: [WindowSnapshot]
+        if restoreResult.isComplete, restoreResult.resolvedSnapshots.isEmpty {
+            // Backward-compatibility path for restore implementations that still
+            // signal completion without providing explicit resolved snapshots.
+            normalizedResolvedSnapshots = snapshots
+        } else {
+            normalizedResolvedSnapshots = restoreResult.resolvedSnapshots
         }
+        let unresolvedAttemptSnapshots = SnapshotSetOperations.removeResolved(
+            from: snapshots,
+            resolved: normalizedResolvedSnapshots
+        )
 
         if restoreResult.movedWindowCount > 0 || restoreResult.alreadyAlignedCount > 0 {
             hasObservedPlacementProgress = true
@@ -255,22 +287,44 @@ public final class SleepWakeCoordinator {
             requiresActiveSpaceChangeForDeferredRestore = false
         }
 
-        if !restoreResult.resolvedSnapshots.isEmpty {
+        if !normalizedResolvedSnapshots.isEmpty {
             let priorPendingCount = pendingRestoreSnapshots.count
             pendingRestoreSnapshots = SnapshotSetOperations.removeResolved(
                 from: pendingRestoreSnapshots,
-                resolved: restoreResult.resolvedSnapshots
+                resolved: normalizedResolvedSnapshots
+            )
+            inactiveWorkspacePendingSnapshots = SnapshotSetOperations.removeResolved(
+                from: inactiveWorkspacePendingSnapshots,
+                resolved: normalizedResolvedSnapshots
             )
             logger.debug(
-                "Pruned resolved snapshots from pending set (resolved=\(restoreResult.resolvedSnapshots.count, privacy: .public) pendingBefore=\(priorPendingCount, privacy: .public) pendingAfter=\(self.pendingRestoreSnapshots.count, privacy: .public))"
+                "Pruned resolved snapshots from pending set (resolved=\(normalizedResolvedSnapshots.count, privacy: .public) pendingBefore=\(priorPendingCount, privacy: .public) pendingAfter=\(self.pendingRestoreSnapshots.count, privacy: .public))"
             )
+        }
 
-            if pendingRestoreSnapshots.isEmpty {
-                logger.info("Restore cycle completed after pruning all pending snapshots")
-                clearRestoreState()
-                lock.unlock()
-                return
+        if !restoreResult.deferredInactiveWorkspaceSnapshots.isEmpty {
+            let movedToInactiveCount = appendInactiveWorkspacePendingSnapshots(
+                restoreResult.deferredInactiveWorkspaceSnapshots,
+                allowedFrom: unresolvedAttemptSnapshots
+            )
+            if movedToInactiveCount > 0 {
+                logger.debug(
+                    "Moved \(movedToInactiveCount, privacy: .public) snapshot(s) into inactive-workspace pending set (active=\(self.activeWorkspacePendingSnapshots().count, privacy: .public) inactive=\(self.inactiveWorkspacePendingSnapshots.count, privacy: .public))"
+                )
             }
+        }
+
+        if pendingRestoreSnapshots.isEmpty {
+            logger.info("Restore cycle completed after pruning all pending snapshots")
+            clearRestoreState()
+            lock.unlock()
+            return
+        }
+
+        if activeWorkspacePendingSnapshots().isEmpty && !inactiveWorkspacePendingSnapshots.isEmpty {
+            enterDeferredEnvironmentWait(requiresActiveSpaceChange: true)
+            lock.unlock()
+            return
         }
 
         if isWaitingForDeferredSpaceExposure,
@@ -284,14 +338,15 @@ public final class SleepWakeCoordinator {
 
         if timedOut {
             let madeObservableProgress =
-                !restoreResult.resolvedSnapshots.isEmpty
+                !normalizedResolvedSnapshots.isEmpty
                 || restoreResult.movedWindowCount > 0
                 || restoreResult.alreadyAlignedCount > 0
 
             if shouldWaitForEnvironmentForDeferredResiduals(restoreResult)
                 || restoreResult.deferredSnapshotCount > 0
             {
-                enterDeferredEnvironmentWait(requiresActiveSpaceChange: true)
+                enterDeferredEnvironmentWait(
+                    requiresActiveSpaceChange: hasInactiveWorkspacePendingSnapshots())
                 lock.unlock()
                 return
             }
@@ -330,7 +385,8 @@ public final class SleepWakeCoordinator {
 
         if noteStagnationAndShouldWaitForEnvironment(restoreResult) {
             if shouldWaitForEnvironmentForDeferredResiduals(restoreResult) {
-                enterDeferredEnvironmentWait(requiresActiveSpaceChange: true)
+                enterDeferredEnvironmentWait(
+                    requiresActiveSpaceChange: hasInactiveWorkspacePendingSnapshots())
                 lock.unlock()
                 return
             }
@@ -353,11 +409,61 @@ public final class SleepWakeCoordinator {
         lock.unlock()
     }
 
+    private func activeWorkspacePendingSnapshots() -> [WindowSnapshot] {
+        SnapshotSetOperations.removeResolved(
+            from: pendingRestoreSnapshots,
+            resolved: inactiveWorkspacePendingSnapshots
+        )
+    }
+
+    private func hasInactiveWorkspacePendingSnapshots() -> Bool {
+        !inactiveWorkspacePendingSnapshots.isEmpty
+    }
+
+    private func promoteInactiveWorkspaceSnapshotsToActive() -> Int {
+        let promotedCount = inactiveWorkspacePendingSnapshots.count
+        inactiveWorkspacePendingSnapshots = []
+        return promotedCount
+    }
+
+    private func appendInactiveWorkspacePendingSnapshots(
+        _ snapshots: [WindowSnapshot],
+        allowedFrom source: [WindowSnapshot]
+    ) -> Int {
+        guard !snapshots.isEmpty, !source.isEmpty else {
+            return 0
+        }
+
+        var remainingBySnapshot: [WindowSnapshot: Int] = [:]
+        for snapshot in source {
+            remainingBySnapshot[snapshot, default: 0] += 1
+        }
+
+        var appended: [WindowSnapshot] = []
+        appended.reserveCapacity(snapshots.count)
+        for snapshot in snapshots {
+            let remaining = remainingBySnapshot[snapshot] ?? 0
+            guard remaining > 0 else {
+                continue
+            }
+            remainingBySnapshot[snapshot] = remaining - 1
+            appended.append(snapshot)
+        }
+
+        guard !appended.isEmpty else {
+            return 0
+        }
+
+        inactiveWorkspacePendingSnapshots.append(contentsOf: appended)
+        return appended.count
+    }
+
     private func clearRestoreState() {
         logger.debug("Clearing post-wake restore state")
         restoreTask?.cancel()
         restoreTask = nil
         pendingRestoreSnapshots = []
+        inactiveWorkspacePendingSnapshots = []
         isAwaitingPostWakeRestore = false
         restoreDeadline = nil
         resetRestoreAttemptTracking()

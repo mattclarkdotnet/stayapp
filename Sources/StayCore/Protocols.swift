@@ -31,6 +31,8 @@ public struct WindowRestoreResult: Equatable, Sendable {
     public var recoverableFailureCount: Int
     /// Number of failures deferred because windows are not currently exposable.
     public var deferredSnapshotCount: Int
+    /// Deferred snapshots specifically blocked by inactive-workspace visibility.
+    public var deferredInactiveWorkspaceSnapshots: [WindowSnapshot]
     // Snapshots that are now resolved (aligned or moved+converged) and should be
     // removed from subsequent retry attempts in the same wake cycle.
     /// Snapshots resolved in this attempt and removable from pending retries.
@@ -43,6 +45,7 @@ public struct WindowRestoreResult: Equatable, Sendable {
         alreadyAlignedCount: Int = 0,
         recoverableFailureCount: Int = 0,
         deferredSnapshotCount: Int = 0,
+        deferredInactiveWorkspaceSnapshots: [WindowSnapshot] = [],
         resolvedSnapshots: [WindowSnapshot] = []
     ) {
         self.isComplete = isComplete
@@ -50,6 +53,7 @@ public struct WindowRestoreResult: Equatable, Sendable {
         self.alreadyAlignedCount = alreadyAlignedCount
         self.recoverableFailureCount = recoverableFailureCount
         self.deferredSnapshotCount = deferredSnapshotCount
+        self.deferredInactiveWorkspaceSnapshots = deferredInactiveWorkspaceSnapshots
         self.resolvedSnapshots = resolvedSnapshots
     }
 
@@ -60,6 +64,7 @@ public struct WindowRestoreResult: Equatable, Sendable {
         alreadyAlignedCount: 0,
         recoverableFailureCount: 0,
         deferredSnapshotCount: 0,
+        deferredInactiveWorkspaceSnapshots: [],
         resolvedSnapshots: []
     )
 }

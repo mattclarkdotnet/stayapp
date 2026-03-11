@@ -623,6 +623,71 @@ struct SleepWakeCoordinatorTests {
         #expect(scheduler.pendingCount == 0)
     }
 
+    @Test("Inactive-workspace deferred snapshots park until active-space change")
+    func inactiveWorkspaceDeferredSnapshotsWaitForActiveSpaceChange() {
+        let first = sampleSnapshot(title: "Primary Space", index: 0)
+        let second = sampleSnapshot(title: "Secondary Space", index: 1)
+        let snapshots = [first, second]
+
+        let capture = StubCaptureService()
+        capture.nextSnapshots = snapshots
+
+        let restore = SpyRestoreService()
+        restore.detailedResults = [
+            WindowRestoreResult(
+                isComplete: false,
+                movedWindowCount: 1,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 1,
+                deferredSnapshotCount: 1,
+                deferredInactiveWorkspaceSnapshots: [second],
+                resolvedSnapshots: [first]
+            ),
+            WindowRestoreResult(
+                isComplete: true,
+                movedWindowCount: 1,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 0,
+                deferredSnapshotCount: 0,
+                resolvedSnapshots: [second]
+            ),
+        ]
+
+        let repository = InMemoryRepository()
+        let scheduler = ManualScheduler()
+        let readiness = SequencedReadinessChecker([true])
+
+        let coordinator = SleepWakeCoordinator(
+            capturing: capture,
+            restoring: restore,
+            repository: repository,
+            readinessChecker: readiness,
+            scheduler: scheduler,
+            wakeDelay: 0,
+            retryInterval: 0.1,
+            maxWaitAfterWake: 120
+        )
+
+        coordinator.handleWillSleep()
+        coordinator.handleDidWake()
+        scheduler.runNext()
+
+        #expect(restore.calls.count == 1)
+        #expect(restore.calls[0] == snapshots)
+        #expect(scheduler.pendingCount == 0)
+
+        coordinator.handleEnvironmentDidChange(.sessionDidBecomeActive)
+        #expect(scheduler.pendingCount == 0)
+
+        coordinator.handleEnvironmentDidChange(.activeSpaceDidChange)
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 2)
+        #expect(restore.calls[1] == [second])
+        #expect(scheduler.pendingCount == 0)
+    }
+
     @Test("Resolved snapshots are pruned from later retry attempts")
     func resolvedSnapshotsArePrunedAcrossRetries() {
         let first = sampleSnapshot(title: "One", index: 0)
@@ -903,7 +968,8 @@ struct SleepWakeCoordinatorTests {
                 movedWindowCount: 0,
                 alreadyAlignedCount: 0,
                 recoverableFailureCount: 1,
-                deferredSnapshotCount: 1
+                deferredSnapshotCount: 1,
+                deferredInactiveWorkspaceSnapshots: snapshots
             ),
             WindowRestoreResult(
                 isComplete: true,
@@ -943,6 +1009,61 @@ struct SleepWakeCoordinatorTests {
         #expect(scheduler.pendingCount == 0)
 
         coordinator.handleEnvironmentDidChange(.activeSpaceDidChange)
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 2)
+        #expect(scheduler.pendingCount == 0)
+    }
+
+    @Test("Non-workspace deferred post-timeout retries accept any environment change")
+    func nonWorkspaceDeferredTimeoutRetriesAcceptAnyEnvironmentChange() {
+        let snapshots = [sampleSnapshot(title: "FreeCAD", index: 0)]
+
+        let capture = StubCaptureService()
+        capture.nextSnapshots = snapshots
+
+        let restore = SpyRestoreService()
+        restore.detailedResults = [
+            WindowRestoreResult(
+                isComplete: false,
+                movedWindowCount: 0,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 1,
+                deferredSnapshotCount: 1
+            ),
+            WindowRestoreResult(
+                isComplete: true,
+                movedWindowCount: 1,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 0,
+                deferredSnapshotCount: 0
+            ),
+        ]
+
+        let repository = InMemoryRepository()
+        let scheduler = ManualScheduler()
+        let readiness = SequencedReadinessChecker([true])
+
+        let coordinator = SleepWakeCoordinator(
+            capturing: capture,
+            restoring: restore,
+            repository: repository,
+            readinessChecker: readiness,
+            scheduler: scheduler,
+            wakeDelay: 0,
+            retryInterval: 0.1,
+            maxWaitAfterWake: -1
+        )
+
+        coordinator.handleWillSleep()
+        coordinator.handleDidWake()
+        scheduler.runNext()
+
+        #expect(restore.calls.count == 1)
+        #expect(scheduler.pendingCount == 0)
+
+        coordinator.handleEnvironmentDidChange(.sessionDidBecomeActive)
         #expect(scheduler.pendingCount == 1)
 
         scheduler.runNext()

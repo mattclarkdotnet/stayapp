@@ -282,6 +282,9 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         // "Deferred" snapshots are windows we intentionally skip this attempt
         // because AX has not exposed enough windows for a safe restore yet.
         var deferredSnapshotCount = 0
+        // Workspace-specific deferrals are tracked explicitly so coordinator
+        // can wait for active-space changes without conflating app-readiness delays.
+        var deferredInactiveWorkspaceSnapshots: [WindowSnapshot] = []
         var resolvedSnapshots: [WindowSnapshot] = []
         logger.info(
             "Starting restore for \(snapshots.count, privacy: .public) snapshot(s) across \(grouped.count, privacy: .public) app(s)"
@@ -302,6 +305,8 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
             if !inactiveSpaceDeferredSnapshots.isEmpty {
                 recoverableFailureCount += inactiveSpaceDeferredSnapshots.count
                 deferredSnapshotCount += inactiveSpaceDeferredSnapshots.count
+                deferredInactiveWorkspaceSnapshots.append(
+                    contentsOf: inactiveSpaceDeferredSnapshots)
                 logger.debug(
                     "Deferring \(inactiveSpaceDeferredSnapshots.count, privacy: .public) snapshot(s) for pid=\(appPID, privacy: .public) because windows are not in the active space (onScreenWindowNumbers=\(onScreenWindowNumbers.count, privacy: .public))"
                 )
@@ -519,7 +524,7 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         )
 
         logger.info(
-            "Restore finished with movedWindowCount=\(movedWindowCount, privacy: .public) alreadyAlignedCount=\(alreadyAlignedCount, privacy: .public) recoverableFailureCount=\(recoverableFailureCount, privacy: .public) deferredSnapshotCount=\(deferredSnapshotCount, privacy: .public)"
+            "Restore finished with movedWindowCount=\(movedWindowCount, privacy: .public) alreadyAlignedCount=\(alreadyAlignedCount, privacy: .public) recoverableFailureCount=\(recoverableFailureCount, privacy: .public) deferredSnapshotCount=\(deferredSnapshotCount, privacy: .public) deferredInactiveWorkspaceCount=\(deferredInactiveWorkspaceSnapshots.count, privacy: .public)"
         )
         return WindowRestoreResult(
             isComplete: recoverableFailureCount == 0,
@@ -527,6 +532,7 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
             alreadyAlignedCount: alreadyAlignedCount,
             recoverableFailureCount: recoverableFailureCount,
             deferredSnapshotCount: deferredSnapshotCount,
+            deferredInactiveWorkspaceSnapshots: deferredInactiveWorkspaceSnapshots,
             resolvedSnapshots: resolvedSnapshots
         )
     }

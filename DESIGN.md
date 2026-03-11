@@ -67,6 +67,8 @@ Why: capture as late as possible before sleep and keep a durable fallback.
   (`moved`, `already aligned`, `recoverable failures`, `deferred snapshots`).
 - Restore attempts now also return which snapshots were actually resolved; coordinator
   removes those from the pending set so later retries only target unresolved windows.
+- Restore attempts now also report snapshots deferred specifically due to inactive
+  workspace visibility; coordinator moves those into an inactive-workspace pending subset.
 - Retries continue until either:
   - restore succeeds, or
   - retries stagnate (no progress), then the app waits for environment change, or
@@ -78,11 +80,15 @@ Why: capture as late as possible before sleep and keep a durable fallback.
 - If stagnation is reached and all remaining failures are deferred-only windows, Stay enters a
   deferred-space wait mode (no interval retries) and waits for environment changes
   (for example, active-space switch) before retrying.
-- In deferred-space wait mode, retries are gated to active-space change notifications to avoid
-  wake/session noise retriggering unnecessary restores.
+- In deferred-space wait mode, retries are gated to active-space change notifications
+  only when inactive-workspace pending snapshots exist; otherwise any environment
+  change may trigger retry.
 - Repeated unchanged residual restore state (`recoverable failures`, `deferred count`,
   `already aligned`) is treated as stagnation even if `moved > 0`, preventing false-progress
   loops where one window keeps reporting as moved without reducing unresolved failures.
+- Working assumption for workspace behavior: windows do not migrate between workspaces
+  across sleep/wake; Stay tracks active-vs-inactive visibility during restore rather
+  than attempting cross-workspace identity migration.
 
 Why: OS wake is often earlier than external monitor wake.
 
@@ -151,6 +157,8 @@ Why: avoids premature restore while monitors are still unavailable, but prevents
 - Uses WindowServer on-screen window numbers to partition app snapshots into:
   - eligible now (current active space)
   - deferred (inactive space / not currently visible)
+- Includes deferred inactive-space snapshots in `WindowRestoreResult` so coordinator
+  can park interval retries and wait for `activeSpaceDidChange`.
 - Multi-window app activation is intentionally limited; automatic wake restore does not
   force-activate multi-window apps just to expose hidden space windows.
 - Performs app-level one-to-one assignment across all snapshot/live-window pairs using

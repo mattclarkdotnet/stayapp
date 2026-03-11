@@ -171,6 +171,8 @@ Add/expand tests for:
 - environment-change retrigger after timeout
 - stale snapshot identity (PID drift, bundle/name fallback behavior)
 - deferred-only residuals parking until active-space/environment change
+- inactive-workspace-specific deferrals (`deferredInactiveWorkspaceSnapshots`) only
+  retrying after `activeSpaceDidChange`
 - untitled multi-window matching using enriched identity (`windowNumber`, role/subrole)
 - Finder-specific capture/restore quirks (Desktop pseudo-window filtering, display-first restore semantics)
 
