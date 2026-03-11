@@ -163,6 +163,7 @@ Add/expand tests for:
 - wake without prior sleep
 - partial capture merged with persisted snapshots
 - explicitly empty apps suppressing stale persisted fallback snapshots
+- repeated restore on an already-aligned layout remains a no-op
 - readiness flapping (display online/offline transitions)
 - restore failing transiently before succeeding
 - timeout reached before readiness

@@ -179,6 +179,50 @@ struct WindowRoundTripTests {
         #expect(restoredUntitled?.frame.width == 700)
         #expect(restoredUntitled?.frame.height == 500)
     }
+
+    @Test("Repeated restore after convergence is idempotent")
+    func repeatedRestoreAfterConvergenceIsIdempotent() {
+        let controller = FixtureWindowController()
+        let service = FixtureWindowSnapshotService(controller: controller)
+
+        let first = controller.createWindow(
+            appPID: 5050,
+            appBundleID: "com.example.editor",
+            appName: "Editor",
+            title: "One",
+            frame: CGRect(x: 120, y: 120, width: 840, height: 640)
+        )
+        let second = controller.createWindow(
+            appPID: 5050,
+            appBundleID: "com.example.editor",
+            appName: "Editor",
+            title: "Two",
+            frame: CGRect(x: 1220, y: 130, width: 860, height: 650)
+        )
+
+        let baseline = service.capture()
+        #expect(baseline.count == 2)
+
+        controller.setFrame(for: first, frame: CGRect(x: 1240, y: 120, width: 840, height: 640))
+        controller.setFrame(for: second, frame: CGRect(x: 140, y: 130, width: 860, height: 650))
+
+        let firstRestore = service.restore(from: baseline)
+        #expect(firstRestore.isComplete)
+        #expect(firstRestore.movedWindowCount == 2)
+        #expect(firstRestore.alreadyAlignedCount == 0)
+        #expect(firstRestore.recoverableFailureCount == 0)
+
+        let framesAfterFirstRestore = Set(controller.windows(forAppPID: 5050).map(\.frame))
+        let secondRestore = service.restore(from: baseline)
+        #expect(secondRestore.isComplete)
+        #expect(secondRestore.movedWindowCount == 0)
+        #expect(secondRestore.alreadyAlignedCount == 2)
+        #expect(secondRestore.recoverableFailureCount == 0)
+
+        let framesAfterSecondRestore = Set(controller.windows(forAppPID: 5050).map(\.frame))
+        #expect(framesAfterSecondRestore == framesAfterFirstRestore)
+        #expect(framesAfterSecondRestore == Set(baseline.map { $0.frame.cgRect }))
+    }
 }
 
 private struct FixtureWindow: Equatable {

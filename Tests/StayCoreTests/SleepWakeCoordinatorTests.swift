@@ -340,6 +340,81 @@ struct SleepWakeCoordinatorTests {
         #expect(scheduler.pendingCount == 0)
     }
 
+    @Test("Transient restore failures with improving residuals continue interval retries")
+    func transientFailuresWithImprovingResidualsContinueRetries() {
+        let snapshots = [sampleSnapshot(title: "Editor", index: 0)]
+
+        let capture = StubCaptureService()
+        capture.nextSnapshots = snapshots
+
+        let restore = SpyRestoreService()
+        restore.detailedResults = [
+            WindowRestoreResult(
+                isComplete: false,
+                movedWindowCount: 0,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 3,
+                deferredSnapshotCount: 0
+            ),
+            WindowRestoreResult(
+                isComplete: false,
+                movedWindowCount: 0,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 2,
+                deferredSnapshotCount: 0
+            ),
+            WindowRestoreResult(
+                isComplete: false,
+                movedWindowCount: 0,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 1,
+                deferredSnapshotCount: 0
+            ),
+            WindowRestoreResult(
+                isComplete: true,
+                movedWindowCount: 1,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 0,
+                deferredSnapshotCount: 0
+            ),
+        ]
+
+        let repository = InMemoryRepository()
+        let scheduler = ManualScheduler()
+        let readiness = SequencedReadinessChecker([true])
+
+        let coordinator = SleepWakeCoordinator(
+            capturing: capture,
+            restoring: restore,
+            repository: repository,
+            readinessChecker: readiness,
+            scheduler: scheduler,
+            wakeDelay: 0,
+            retryInterval: 0.1,
+            maxWaitAfterWake: 120,
+            maxStagnantAttemptsBeforeEnvironmentWait: 1
+        )
+
+        coordinator.handleWillSleep()
+        coordinator.handleDidWake()
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 1)
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 2)
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 3)
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 4)
+        #expect(scheduler.pendingCount == 0)
+    }
+
     @Test("Stagnant pre-timeout failures wait for environment change before retry")
     func stagnantFailuresWaitForEnvironmentChange() {
         let snapshots = [sampleSnapshot(title: "Safari", index: 0)]

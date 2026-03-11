@@ -143,6 +143,8 @@ Scope:
 - persistence fallback behavior
 - malformed persisted payload handling (decode failure paths)
 - readiness and restore retry interactions
+- restore idempotence (repeat restore is a no-op once aligned)
+- transient restore failures with improving residual state
 - seeded event-trace fuzzing with replayable seeds for coordinator invariants
 
 Why:
