@@ -289,18 +289,17 @@ struct WakeCycleScenarioRunner {
             phase: .prepared
         )
         try persistCycleState(cycleState, to: cycleURL)
-        if launchAgentFallbackEnabled {
-            try installWakeResumeLaunchAgent(for: scenario, state: cycleState)
-        } else {
-            print(
-                "Cycle mode: LaunchAgent fallback is disabled (set STAY_CYCLE_ENABLE_LAUNCH_AGENT=1 to enable)."
-            )
-            uninstallWakeResumeLaunchAgent(for: scenario, state: cycleState)
-        }
-
-        cycleState.phase = .armedForWake
-        cycleState.sleepIssuedAt = Date()
-        try persistCycleState(cycleState, to: cycleURL)
+        try configureCycleLaunchAgentFallback(
+            enabled: launchAgentFallbackEnabled,
+            scenario: scenario,
+            state: cycleState
+        )
+        try persistCyclePhase(
+            .armedForWake,
+            sleepIssuedAt: Date(),
+            state: &cycleState,
+            to: cycleURL
+        )
 
         print("Cycle mode: sleeping machine in 3 seconds.")
         print("After wake/login, this runner will continue automatically.")
@@ -310,8 +309,12 @@ struct WakeCycleScenarioRunner {
         print("Cycle mode: waiting for wake/session signals.")
         _ = waitForWakeOrSessionSignal(timeout: 20)
 
-        cycleState.phase = .resumedInRunner
-        try persistCycleState(cycleState, to: cycleURL)
+        try persistCyclePhase(
+            .resumedInRunner,
+            sleepIssuedAt: cycleState.sleepIssuedAt,
+            state: &cycleState,
+            to: cycleURL
+        )
 
         do {
             try runAutomatedVerifyAfterWake(
@@ -320,18 +323,19 @@ struct WakeCycleScenarioRunner {
                 source: "cycle-runner",
                 skipPrerequisiteCheck: true
             )
-            cycleState.phase = .completed
-            try persistCycleState(cycleState, to: cycleURL)
-            if launchAgentFallbackEnabled {
-                uninstallWakeResumeLaunchAgent(for: scenario, state: cycleState)
-            }
-            try? fileManager.removeItem(at: cycleURL)
+            try finalizeCycleSuccess(
+                scenario: scenario,
+                state: &cycleState,
+                cycleURL: cycleURL,
+                launchAgentFallbackEnabled: launchAgentFallbackEnabled
+            )
         } catch {
-            cycleState.phase = .failed
-            try? persistCycleState(cycleState, to: cycleURL)
-            if launchAgentFallbackEnabled {
-                uninstallWakeResumeLaunchAgent(for: scenario, state: cycleState)
-            }
+            finalizeCycleFailure(
+                scenario: scenario,
+                state: &cycleState,
+                cycleURL: cycleURL,
+                launchAgentFallbackEnabled: launchAgentFallbackEnabled
+            )
             throw error
         }
     }
@@ -357,8 +361,12 @@ struct WakeCycleScenarioRunner {
             return
         }
 
-        cycleState.phase = .verifying
-        try persistCycleState(cycleState, to: cycleURL)
+        try persistCyclePhase(
+            .verifying,
+            sleepIssuedAt: cycleState.sleepIssuedAt,
+            state: &cycleState,
+            to: cycleURL
+        )
 
         do {
             try runAutomatedVerifyAfterWake(
@@ -367,15 +375,77 @@ struct WakeCycleScenarioRunner {
                 source: "launch-agent",
                 skipPrerequisiteCheck: false
             )
-            cycleState.phase = .completed
-            try persistCycleState(cycleState, to: cycleURL)
-            uninstallWakeResumeLaunchAgent(for: scenario, state: cycleState)
-            try? fileManager.removeItem(at: cycleURL)
+            try finalizeCycleSuccess(
+                scenario: scenario,
+                state: &cycleState,
+                cycleURL: cycleURL,
+                launchAgentFallbackEnabled: true
+            )
         } catch {
-            cycleState.phase = .failed
-            try? persistCycleState(cycleState, to: cycleURL)
-            uninstallWakeResumeLaunchAgent(for: scenario, state: cycleState)
+            finalizeCycleFailure(
+                scenario: scenario,
+                state: &cycleState,
+                cycleURL: cycleURL,
+                launchAgentFallbackEnabled: true
+            )
             throw error
+        }
+    }
+
+    private func persistCyclePhase(
+        _ phase: WakeCyclePhase,
+        sleepIssuedAt: Date?,
+        state: inout WakeCycleState,
+        to cycleURL: URL
+    ) throws {
+        state.phase = phase
+        state.sleepIssuedAt = sleepIssuedAt
+        try persistCycleState(state, to: cycleURL)
+    }
+
+    private func configureCycleLaunchAgentFallback(
+        enabled: Bool,
+        scenario: Scenario,
+        state: WakeCycleState
+    ) throws {
+        guard enabled else {
+            print(
+                "Cycle mode: LaunchAgent fallback is disabled (set STAY_CYCLE_ENABLE_LAUNCH_AGENT=1 to enable)."
+            )
+            uninstallWakeResumeLaunchAgent(for: scenario, state: state)
+            return
+        }
+        try installWakeResumeLaunchAgent(for: scenario, state: state)
+    }
+
+    private func finalizeCycleSuccess(
+        scenario: Scenario,
+        state: inout WakeCycleState,
+        cycleURL: URL,
+        launchAgentFallbackEnabled: Bool
+    ) throws {
+        try persistCyclePhase(
+            .completed,
+            sleepIssuedAt: state.sleepIssuedAt,
+            state: &state,
+            to: cycleURL
+        )
+        if launchAgentFallbackEnabled {
+            uninstallWakeResumeLaunchAgent(for: scenario, state: state)
+        }
+        try? fileManager.removeItem(at: cycleURL)
+    }
+
+    private func finalizeCycleFailure(
+        scenario: Scenario,
+        state: inout WakeCycleState,
+        cycleURL: URL,
+        launchAgentFallbackEnabled: Bool
+    ) {
+        state.phase = .failed
+        try? persistCycleState(state, to: cycleURL)
+        if launchAgentFallbackEnabled {
+            uninstallWakeResumeLaunchAgent(for: scenario, state: state)
         }
     }
 
