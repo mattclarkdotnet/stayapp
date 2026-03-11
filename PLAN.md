@@ -1,29 +1,37 @@
-# Plan: Baseline Stability Hardening
+# Plan: Multiple Workspace Restore
 
 ## Roadmap alignment
 
-- This plan implements `ROADMAP.md` `Now` by hardening the current capture/restore and wake-cycle baseline so future workspace/fullscreen/monitor-topology work builds on proven stable behavior.
+- This plan implements `ROADMAP.md` `Now` by adding workspace-aware restore behavior while preserving existing wake-cycle and no-sleep stability guarantees.
 
 ## Objective
 
-- Convert the current implementation from “working” to “reliably predictable” by locking down deterministic behavior, codifying failure handling, and enforcing repeatable test gates before any new feature scope is started.
+- Add deterministic multi-workspace window restoration using explicit state-machine transitions and workspace-scoped pending snapshot tracking so windows in inactive spaces are restored when their space becomes active.
 
 ## Scenario mapping
 
-- Scenario 1.1 / 1.2 (`finder`, `app` no-sleep): enforce idempotent restore behavior (`restore` after already-correct placement is a no-op) and stable window matching across repeated perturb/restore loops.
-- Scenario 1.3 / 1.4 (`freecad`, `kicad` no-sleep): enforce stable child-window/editor assignment, preserve size when required, and verify deterministic placement ordering when multiple windows share weak titles.
-- Scenario 2.1-2.4 (`cycle` wake/sleep): enforce deterministic cycle-state transitions (`prepare -> armed -> resumed/verifying -> completed|failed`) under delayed display readiness and repeated wake/session signals.
-- Cross-scenario hardening: explicitly test “running app with zero open windows,” transient AX frame-write failures, and missing/offline display conditions so retries/deferred handling stay bounded and non-destructive.
-- Cross-scenario persistence: verify scenario/cycle state codecs are backward-compatible with existing persisted files and fail safely (clear diagnostics, no crashes, no stale-state loops) on malformed data.
+- Scenario 1.1 / 1.2 (`finder`, `app` no-sleep): keep current behavior unchanged on a single active workspace while proving restore remains idempotent.
+- Scenario 1.3 / 1.4 (`freecad`, `kicad` no-sleep): preserve child-window/split-editor matching while introducing workspace-scoped retry state.
+- Scenario 2.1-2.4 (`cycle` wake/sleep): extend wake orchestration so deferred windows are partitioned by active workspace and retried only when relevant workspace signals arrive.
+- Implementation detail: add a workspace-aware pending model in `StayCore` that tracks unresolved snapshots by workspace identity (including “unknown workspace”), with explicit transitions for `didWake`, `activeSpaceDidChange`, timeout, and completion.
+- Implementation detail: extend restore result/accounting to report workspace progress (resolved now vs deferred to other workspace) so coordinator decisions are based on typed state rather than implicit counts.
+- Implementation detail: keep all workspace policy in `StayCore`; `Stay` layer only emits environment/workspace signals and workspace identity snapshots.
 
 ## Exit criteria
 
-- `DESIGN.md`, `TESTING.md`, and `Tests/TESTS.md` describe the exact implemented behavior for capture, prepare/verify, cycle/resume, persistence, and failure handling (no drift).
-- `WakeCycleScenariosCoreTests` includes explicit coverage for invocation parsing, scenario metadata, scenario/cycle persistence codecs, and malformed-input decode failures.
-- Deterministic tests cover: no-open-window apps, deferred-only residual behavior, retry stagnation boundaries, and restore no-op behavior when windows are already aligned.
-- Real-app baseline remains green with `STAY_REALAPP_VISUAL_PAUSE=0 swift test --filter RealAppScenarioTests`, and no regressions are observed in Finder/TextEdit/FreeCAD/KiCad scenarios.
-- Public APIs touched by this roadmap item have docstrings, and internal non-obvious flow-control methods include intent comments explaining why behavior is constrained.
+- `SleepWakeCoordinator` uses explicit workspace-aware state transitions (documented in `DESIGN.md`) instead of ad-hoc branching for active-space retries.
+- Deterministic tests cover:
+  - windows deferred to inactive workspace are not repeatedly retried on interval,
+  - `activeSpaceDidChange` retriggers only relevant pending workspace snapshots,
+  - repeated workspace-change noise does not create unbounded retry loops,
+  - already-restored workspace snapshots remain no-op on subsequent signals.
+- Existing baseline test gates remain green:
+  - `swift test --filter StayCoreTests`
+  - `swift test --filter WakeCycleScenariosCoreTests`
+  - `swift test --filter WindowRoundTripTests`
+  - repeated `STAY_REALAPP_VISUAL_PAUSE=0 swift test --filter RealAppScenarioTests`
+- `TESTING.md` and `Tests/TESTS.md` describe the workspace model, expected retry behavior, and known limits.
 
 ## Promotion rule
 
-- Promote `Now` only when deterministic/unit gates and real-app baseline gates both pass with no known flaky paths, and the documented behavior matches the implementation exactly enough to support multi-workspace work without reopening baseline bugs.
+- Promote this plan only when multi-workspace behavior is validated by deterministic coordinator tests plus repeated real-app runs, with no regression to single-workspace scenarios and no known workspace-retry flake path.
