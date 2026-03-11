@@ -250,6 +250,7 @@ Wake-cycle integration uses the `WakeCycleScenarios` executable:
 - app/PID/window discovery helpers in `AppWindowDiscoverySupport.swift`
 - AX/window frame + display helpers in `WindowAXSupport.swift`
 - verification/readiness/restore-convergence helpers in `VerificationSupport.swift`
+- FreeCAD-specific window-selection heuristics in `FreeCADWindowSelectionSupport.swift`
 
 Physical sleep/display wake timing is intentionally left for manual/QA validation on real hardware.
 
