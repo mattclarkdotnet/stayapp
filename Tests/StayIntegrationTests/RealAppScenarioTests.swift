@@ -53,6 +53,7 @@ struct RealAppScenarioTests {
     func textEditTwoWindowScenario() {
         runTwoWindowScenario(
             bundleID: "com.apple.TextEdit",
+            quitAppAfterScenario: true,
             createWindowsScript: """
                 tell application id "com.apple.TextEdit"
                     activate
@@ -73,7 +74,11 @@ struct RealAppScenarioTests {
         runKiCadMainPcbPrimarySchematicSecondaryScenario()
     }
 
-    private func runTwoWindowScenario(bundleID: String, createWindowsScript: String) {
+    private func runTwoWindowScenario(
+        bundleID: String,
+        quitAppAfterScenario: Bool = false,
+        createWindowsScript: String
+    ) {
         let hasAXPermission = AXIsProcessTrusted()
         #expect(hasAXPermission)
         guard hasAXPermission else {
@@ -100,6 +105,11 @@ struct RealAppScenarioTests {
         #expect(pidReady)
         guard pidReady, let appPID = runningAppPID(bundleID: bundleID) else {
             return
+        }
+        let cleanup: (() -> Void)? =
+            quitAppAfterScenario ? { self.quitApp(bundleID: bundleID, pid: appPID) } : nil
+        defer {
+            cleanup?()
         }
 
         let existingWindows = liveWindows(pid: appPID)
@@ -238,6 +248,10 @@ struct RealAppScenarioTests {
 
         let bundleID = activation.bundleID
         let appPID = activation.pid
+        defer {
+            quitApp(bundleID: bundleID, pid: appPID)
+        }
+
         let settableReady = waitUntil(timeout: 15.0) {
             self.liveSettableWindows(pid: appPID).count >= 2
         }
@@ -387,6 +401,13 @@ struct RealAppScenarioTests {
         else {
             #expect(Bool(false))
             return
+        }
+        defer {
+            quitApps([
+                (bundleID: schematicEditor.bundleID, pid: schematicEditor.pid),
+                (bundleID: pcbEditor.bundleID, pid: pcbEditor.pid),
+                (bundleID: kicadMain.bundleID, pid: kicadMain.pid),
+            ])
         }
 
         let kicadMainReady = waitUntil(timeout: 15.0) {
@@ -1073,6 +1094,49 @@ struct RealAppScenarioTests {
                 })
             }
         }
+    }
+
+    private func quitApps(_ apps: [(bundleID: String, pid: Int32)]) {
+        for app in apps {
+            quitApp(bundleID: app.bundleID, pid: app.pid)
+        }
+    }
+
+    private func quitApp(bundleID: String, pid: Int32) {
+        _ = runAppleScript("tell application id \"\(bundleID)\" to quit")
+        let quitByScript = waitUntil(timeout: 3.0) {
+            self.runningApplication(pid: pid) == nil
+        }
+        if quitByScript {
+            return
+        }
+
+        if let app = runningApplication(pid: pid) ?? runningApplication(bundleID: bundleID) {
+            _ = app.terminate()
+            let terminated = waitUntil(timeout: 3.0) {
+                self.runningApplication(pid: pid) == nil
+            }
+            if terminated {
+                return
+            }
+
+            _ = app.forceTerminate()
+            _ = waitUntil(timeout: 2.0) {
+                self.runningApplication(pid: pid) == nil
+            }
+        }
+    }
+
+    private func runningApplication(pid: Int32) -> NSRunningApplication? {
+        NSWorkspace.shared.runningApplications.first(where: {
+            !$0.isTerminated && $0.processIdentifier == pid
+        })
+    }
+
+    private func runningApplication(bundleID: String) -> NSRunningApplication? {
+        NSWorkspace.shared.runningApplications.first(where: {
+            !$0.isTerminated && $0.bundleIdentifier == bundleID
+        })
     }
 
     private struct LiveWindow {

@@ -77,8 +77,9 @@ swift run WakeCycleScenarios verify kicad --check-only
   main window on screen 1, child windows (`tasks`, `model`, `report view`, `python console`) on screen 2.
 - Scenario 1.3 uses position-only moves for FreeCAD windows so tool-window sizes are preserved.
 - Running these tests will visibly move windows across screens.
+- TextEdit, FreeCAD, and KiCad real-app scenarios explicitly quit those apps during cleanup.
 - For wake-cycle scenarios, run `prepare`, let the machine sleep/wake, log in, then run `verify`.
-- `verify` perturbs one tracked window first, then restores and validates display and frame placement.
+- `verify` waits for display and app/window readiness first, then perturbs one tracked window, restores, and validates display and frame placement.
 - Use `verify --check-only` when you only want passive post-wake validation.
 
 ## Test Design Pattern

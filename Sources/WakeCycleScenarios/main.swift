@@ -591,6 +591,16 @@ struct WakeCycleScenarioRunner {
         let bundleIDs = state.trackedBundleIDs ?? [state.bundleID]
         let pids = try ensureAppsRunning(bundleIDs: bundleIDs)
         print("Verifying scenario '\(scenario.rawValue)' for app pid(s)=\(pids)")
+        print("Waiting for app/window readiness before verification.")
+        guard
+            waitForAppWindowReadinessWithProgress(
+                trackedWindows: state.trackedWindows,
+                pids: pids,
+                timeout: 25
+            )
+        else {
+            throw RunnerError.failed("app windows not ready for verification after wake")
+        }
 
         if checkOnly {
             print("Check-only mode enabled; skipping perturbation and restore.")
@@ -1396,6 +1406,97 @@ struct WakeCycleScenarioRunner {
         }
 
         return waitForDisplayReadiness(requiredDisplays, timeout: 0.1)
+    }
+
+    private func waitForAppWindowReadinessWithProgress(
+        trackedWindows: [TrackedWindow],
+        pids: [Int32],
+        timeout: TimeInterval
+    ) -> Bool {
+        guard !trackedWindows.isEmpty else {
+            print("App/window readiness OK (no tracked windows).")
+            return true
+        }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        let requiredStablePasses = 3
+        var stablePasses = 0
+        var nextLog = Date.distantPast
+
+        while Date() < deadline {
+            let windows = liveWindows(pids: pids)
+            let assignments = assignLiveWindows(trackedWindows, to: windows)
+            let matchedCount = assignments.count
+
+            var expectedCountsByBundle: [String: Int] = [:]
+            for tracked in trackedWindows {
+                guard let bundleID = tracked.appBundleID else {
+                    continue
+                }
+                expectedCountsByBundle[bundleID, default: 0] += 1
+            }
+
+            var liveCountsByBundle: [String: Int] = [:]
+            for window in windows {
+                guard let bundleID = window.appBundleID else {
+                    continue
+                }
+                liveCountsByBundle[bundleID, default: 0] += 1
+            }
+
+            let bundleDeficits = expectedCountsByBundle.keys.sorted().compactMap {
+                bundleID -> String? in
+                let expected = expectedCountsByBundle[bundleID] ?? 0
+                let live = liveCountsByBundle[bundleID] ?? 0
+                guard live < expected else {
+                    return nil
+                }
+                return "\(bundleID)(\(live)/\(expected))"
+            }
+
+            let ready = matchedCount == trackedWindows.count && bundleDeficits.isEmpty
+            if ready {
+                stablePasses += 1
+                if stablePasses >= requiredStablePasses {
+                    print(
+                        "App/window readiness OK (matched=\(matchedCount)/\(trackedWindows.count), stable=\(stablePasses))."
+                    )
+                    return true
+                }
+            } else {
+                stablePasses = 0
+            }
+
+            if Date() >= nextLog {
+                var trackedTitleCounts: [String: Int] = [:]
+                for tracked in trackedWindows {
+                    trackedTitleCounts[tracked.titleHint, default: 0] += 1
+                }
+                var matchedTitleCounts: [String: Int] = [:]
+                for assignment in assignments {
+                    matchedTitleCounts[assignment.0.titleHint, default: 0] += 1
+                }
+
+                var unmatchedTitleHints: [String] = []
+                for title in trackedTitleCounts.keys.sorted() {
+                    let trackedCount = trackedTitleCounts[title] ?? 0
+                    let matchedCountForTitle = matchedTitleCounts[title] ?? 0
+                    let unmatchedCount = max(0, trackedCount - matchedCountForTitle)
+                    if unmatchedCount > 0 {
+                        unmatchedTitleHints.append(
+                            contentsOf: Array(repeating: title, count: unmatchedCount))
+                    }
+                }
+                print(
+                    "App/window readiness pending: liveWindows=\(windows.count) matched=\(matchedCount)/\(trackedWindows.count) bundleDeficits=\(bundleDeficits) unmatchedTitles=\(unmatchedTitleHints)"
+                )
+                nextLog = Date().addingTimeInterval(1.0)
+            }
+
+            sleepRunLoop(0.2)
+        }
+
+        return false
     }
 
     private func waitForVerificationWithProgress(

@@ -224,8 +224,9 @@ Wake-cycle integration uses the `WakeCycleScenarios` executable:
 
 - `prepare finder|app|freecad|kicad`: create/position real windows, persist state,
   optionally sleep the machine
-- `verify finder|app|freecad|kicad`: wait for display readiness, perturb one tracked window,
-  run restore attempts, then verify final display+frame alignment
+- `verify finder|app|freecad|kicad`: wait for display readiness, then wait for
+  app/window readiness (tracked windows must be discoverable and matchable), perturb one
+  tracked window, run restore attempts, then verify final display+frame alignment
 - `verify ... --check-only`: passive post-wake validation without perturb/restore
 
 Physical sleep/display wake timing is intentionally left for manual/QA validation on real hardware.

@@ -169,7 +169,7 @@ How:
   1. `swift run WakeCycleScenarios prepare finder|app|freecad|kicad`
   2. let the machine sleep and wake
   3. log in after wake
-  4. `swift run WakeCycleScenarios verify finder|app|freecad|kicad` (default: perturb one window, restore, verify display+frame)
+  4. `swift run WakeCycleScenarios verify finder|app|freecad|kicad` (waits for display + app/window readiness, then perturbs one window, restores, and verifies display+frame)
   5. optional passive check: `swift run WakeCycleScenarios verify finder|app|freecad|kicad --check-only`
 
 Limitations:
