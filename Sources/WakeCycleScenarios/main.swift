@@ -154,6 +154,9 @@ struct WakeCycleScenarioRunner {
         )
     }
 
+    private typealias ScreenDisplay = (screen: NSScreen, id: UInt32)
+    private typealias TitleDisplayExpectation = (titleHint: String, displayID: UInt32)
+
     struct LiveWindow {
         let element: AXUIElement
         let appPID: Int32
@@ -584,7 +587,7 @@ struct WakeCycleScenarioRunner {
         scenario: Scenario,
         activeBundleID: String,
         pid: Int32,
-        displays: [(screen: NSScreen, id: UInt32)],
+        displays: [ScreenDisplay],
         shouldSleep: Bool
     ) throws {
         let (primaryDisplay, secondaryDisplay) = try primarySecondaryDisplays(from: displays)
@@ -695,7 +698,7 @@ struct WakeCycleScenarioRunner {
 
     private func prepareKiCadScenario(
         scenario: Scenario,
-        displays: [(screen: NSScreen, id: UInt32)],
+        displays: [ScreenDisplay],
         shouldSleep: Bool
     ) throws {
         let (primaryDisplay, secondaryDisplay) = try primarySecondaryDisplays(from: displays)
@@ -942,18 +945,11 @@ struct WakeCycleScenarioRunner {
     }
 
     private func persistCycleState(_ state: WakeCycleState, to url: URL) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(state)
-        try data.write(to: url, options: .atomic)
+        try writeJSON(state, to: url)
     }
 
     private func loadCycleState(from url: URL) throws -> WakeCycleState {
-        let data = try Data(contentsOf: url)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(WakeCycleState.self, from: data)
+        try readJSON(WakeCycleState.self, from: url)
     }
 
     private func resolvedExecutablePath() -> String {
@@ -1105,7 +1101,7 @@ struct WakeCycleScenarioRunner {
         try fileManager.createDirectory(at: scenarioDirectory, withIntermediateDirectories: true)
     }
 
-    private func validatedExternalDisplays() throws -> [(screen: NSScreen, id: UInt32)] {
+    private func validatedExternalDisplays() throws -> [ScreenDisplay] {
         let sortedScreens = NSScreen.screens.sorted { lhs, rhs in
             if lhs.frame.minX != rhs.frame.minX {
                 return lhs.frame.minX < rhs.frame.minX
@@ -1118,7 +1114,7 @@ struct WakeCycleScenarioRunner {
                 "expected exactly two active displays; found \(sortedScreens.count)")
         }
 
-        var result: [(screen: NSScreen, id: UInt32)] = []
+        var result: [ScreenDisplay] = []
         for screen in sortedScreens {
             guard let id = displayID(for: screen) else {
                 throw RunnerError.failed("could not determine NSScreenNumber")
@@ -1132,8 +1128,8 @@ struct WakeCycleScenarioRunner {
         return result
     }
 
-    private func primarySecondaryDisplays(from displays: [(screen: NSScreen, id: UInt32)]) throws
-        -> (primary: (screen: NSScreen, id: UInt32), secondary: (screen: NSScreen, id: UInt32))
+    private func primarySecondaryDisplays(from displays: [ScreenDisplay]) throws
+        -> (primary: ScreenDisplay, secondary: ScreenDisplay)
     {
         guard displays.count == 2 else {
             throw RunnerError.failed("expected exactly two displays")
@@ -1774,7 +1770,7 @@ struct WakeCycleScenarioRunner {
 
     private func waitForDisplays(
         pid: Int32,
-        expected: [(titleHint: String, displayID: UInt32)],
+        expected: [TitleDisplayExpectation],
         timeout: TimeInterval
     ) -> Bool {
         waitUntil(timeout: timeout) {
@@ -2068,7 +2064,7 @@ struct WakeCycleScenarioRunner {
         scenario: Scenario,
         trackedWindows: [TrackedWindow],
         pids: [Int32],
-        displays: [(screen: NSScreen, id: UInt32)]
+        displays: [ScreenDisplay]
     ) -> Bool {
         let windows = liveWindows(pids: pids)
         let assignments = assignLiveWindows(trackedWindows, to: windows)
@@ -2289,26 +2285,30 @@ struct WakeCycleScenarioRunner {
     }
 
     private func persistState(_ state: ScenarioState, to url: URL) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(state)
-        try data.write(to: url, options: .atomic)
+        try writeJSON(state, to: url)
     }
 
     private func loadState(from url: URL) throws -> ScenarioState {
-        let data = try Data(contentsOf: url)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(ScenarioState.self, from: data)
+        try readJSON(ScenarioState.self, from: url)
     }
 
     private func persistReport(_ report: ScenarioReport, to url: URL) throws {
+        try writeJSON(report, to: url)
+    }
+
+    private func writeJSON<Value: Encodable>(_ value: Value, to url: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(report)
+        let data = try encoder.encode(value)
         try data.write(to: url, options: .atomic)
+    }
+
+    private func readJSON<Value: Decodable>(_ type: Value.Type, from url: URL) throws -> Value {
+        let data = try Data(contentsOf: url)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(type, from: data)
     }
 
     private func cleanupCreatedPaths(_ paths: [String]) {
