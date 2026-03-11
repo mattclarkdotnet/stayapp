@@ -92,6 +92,18 @@ Why: capture as late as possible before sleep and keep a durable fallback.
 
 Why: OS wake is often earlier than external monitor wake.
 
+### 4. On user-triggered restore
+
+- The menu-bar `Restore Layout Now` action starts the same restore-cycle state machine
+  used after wake, but with an immediate first attempt instead of a wake delay.
+- This means workspace-specific deferrals survive the first restore invocation and stay
+  pending until a later `activeSpaceDidChange` exposes the window again.
+- Manual restore therefore does not force a workspace switch; it waits for the user or
+  macOS to make the target workspace active and retries then.
+
+Why: direct restore should behave like wake restore for deferred windows instead of
+discarding pending workspace state after a single AX pass.
+
 ## Display Readiness Logic
 
 `DisplayWakeReadinessChecker` enforces strict conditions:
@@ -108,6 +120,9 @@ Post-timeout retries are capped so repeated environment-change notifications can
 an endless restore loop.
 If deferred snapshots remain, timeout capping is bypassed and Stay keeps pending work for
 later active-space changes.
+
+The same readiness and environment-change logic is shared by wake-triggered restores and
+manual restores; on a normal awake desktop, manual restores usually pass readiness immediately.
 
 Why: avoids premature restore while monitors are still unavailable, but prevents infinite waits.
 
@@ -229,6 +244,8 @@ Real-app no-sleep integration tests in `StayIntegrationTests.RealAppScenarioTest
 
 - two Finder windows across two displays
 - two TextEdit windows across two displays
+- one TextEdit window captured on a secondary Mission Control workspace, then restored
+  when that workspace becomes active again
 - FreeCAD main window + child windows (tasks/model/report/python console) across two displays
 - KiCad main + PCB editor on primary display, schematic editor on secondary display
 

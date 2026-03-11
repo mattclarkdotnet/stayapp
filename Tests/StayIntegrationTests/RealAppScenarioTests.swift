@@ -75,6 +75,13 @@ struct RealAppScenarioTests {
         runKiCadMainPcbPrimarySchematicSecondaryScenario()
     }
 
+    @Test(
+        "Scenario 5: TextEdit window on secondary workspace restores when that workspace becomes active"
+    )
+    func textEditSecondaryWorkspaceScenario() {
+        runTextEditSecondaryWorkspaceScenario()
+    }
+
     private func runTwoWindowScenario(
         bundleID: String,
         quitAppAfterScenario: Bool = false,
@@ -221,6 +228,210 @@ struct RealAppScenarioTests {
         }
         #expect(restored)
         guard restored else {
+            return
+        }
+
+        pauseForVisualConfirmation(duration: 2.0)
+    }
+
+    private func runTextEditSecondaryWorkspaceScenario() {
+        let hasAXPermission = AXIsProcessTrusted()
+        #expect(hasAXPermission)
+        guard hasAXPermission else {
+            return
+        }
+
+        guard let displays = validatedTwoExternalDisplays() else {
+            return
+        }
+        let primaryScreen = displays[0].screen
+        let secondaryScreen = displays[1].screen
+        let primaryDisplayID = displays[0].id
+        let secondaryDisplayID = displays[1].id
+        let textEditBundleID = "com.apple.TextEdit"
+
+        _ = switchWorkspace(.left)
+        pauseForVisualConfirmation(duration: 0.5)
+
+        let switchedToSecondaryWorkspace = switchWorkspace(.right)
+        #expect(switchedToSecondaryWorkspace)
+        guard switchedToSecondaryWorkspace else {
+            return
+        }
+        pauseForVisualConfirmation(duration: 0.5)
+
+        let appActivated = runAppleScript("tell application id \"\(textEditBundleID)\" to activate")
+        #expect(appActivated)
+        guard appActivated else {
+            return
+        }
+
+        let pidReady = waitUntil(timeout: 8.0) {
+            self.runningAppPID(bundleID: textEditBundleID) != nil
+        }
+        #expect(pidReady)
+        guard pidReady, let appPID = runningAppPID(bundleID: textEditBundleID) else {
+            return
+        }
+
+        let existingWindows = liveWindows(pid: appPID)
+        let runID = String(UUID().uuidString.prefix(8)).lowercased()
+        let fileURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("stay-workspace-\(runID).txt")
+        try? "Workspace scenario\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        let createWindow = runAppleScript(
+            """
+            tell application id "\(textEditBundleID)"
+                activate
+                open POSIX file "\(escapedAppleScriptString(fileURL.path))"
+            end tell
+            """)
+        #expect(createWindow)
+        guard createWindow else {
+            try? FileManager.default.removeItem(at: fileURL)
+            return
+        }
+
+        let windowReady = waitUntil(timeout: 8.0) {
+            self.newlyDiscoveredWindows(pid: appPID, excluding: existingWindows).contains(where: {
+                ($0.title ?? "").lowercased().contains(fileURL.lastPathComponent.lowercased())
+            })
+        }
+        #expect(windowReady)
+        guard windowReady else {
+            try? FileManager.default.removeItem(at: fileURL)
+            return
+        }
+        pauseForVisualConfirmation(duration: 1.0)
+
+        let createdWindows = newlyDiscoveredWindows(pid: appPID, excluding: existingWindows)
+        let matchingWindow = createdWindows.first(where: {
+            ($0.title ?? "").lowercased().contains(fileURL.lastPathComponent.lowercased())
+        })
+        #expect(matchingWindow != nil)
+        guard let matchingWindow else {
+            try? FileManager.default.removeItem(at: fileURL)
+            return
+        }
+        let window = matchingWindow.element
+
+        defer {
+            closeWindows(pid: appPID, elements: [window])
+            quitApp(bundleID: textEditBundleID, pid: appPID)
+            try? FileManager.default.removeItem(at: fileURL)
+            _ = switchWorkspace(.left)
+        }
+
+        let secondaryPlaced = setWindowFrame(
+            element: window,
+            frame: scenarioFrame(on: secondaryScreen, offset: 0)
+        )
+        #expect(secondaryPlaced)
+        guard secondaryPlaced else {
+            return
+        }
+
+        let screenService = NSScreenCoordinateService()
+        let baselinePlacementSettled = waitUntil(timeout: 5.0) {
+            self.displayID(for: window, screenService: screenService) == secondaryDisplayID
+                && self.isWindowOnScreen(window, ownerPID: appPID)
+        }
+        #expect(baselinePlacementSettled)
+        guard baselinePlacementSettled else {
+            return
+        }
+        pauseForVisualConfirmation(duration: 1.0)
+
+        let snapshotService = AXWindowSnapshotService(screenService: screenService)
+        let appSnapshots = snapshotService.capture().filter { $0.appBundleID == textEditBundleID }
+        let baselineSnapshots = snapshotsForWindows(windows: [window], appSnapshots: appSnapshots)
+        #expect(baselineSnapshots.count == 1)
+        #expect(baselineSnapshots.first?.screenDisplayID == secondaryDisplayID)
+        guard baselineSnapshots.count == 1,
+            baselineSnapshots.first?.screenDisplayID == secondaryDisplayID
+        else {
+            return
+        }
+
+        let primaryPlaced = setWindowFrame(
+            element: window,
+            frame: scenarioFrame(on: primaryScreen, offset: 0)
+        )
+        #expect(primaryPlaced)
+        guard primaryPlaced else {
+            return
+        }
+
+        let perturbationSettled = waitUntil(timeout: 5.0) {
+            self.displayID(for: window, screenService: screenService) == primaryDisplayID
+                && self.isWindowOnScreen(window, ownerPID: appPID)
+        }
+        #expect(perturbationSettled)
+        guard perturbationSettled else {
+            return
+        }
+        pauseForVisualConfirmation(duration: 1.0)
+
+        let switchedBackToPrimaryWorkspace = switchWorkspace(.left)
+        #expect(switchedBackToPrimaryWorkspace)
+        guard switchedBackToPrimaryWorkspace else {
+            return
+        }
+
+        let hiddenOnPrimaryWorkspace = waitUntil(timeout: 5.0) {
+            !self.isWindowOnScreen(window, ownerPID: appPID)
+        }
+        #expect(hiddenOnPrimaryWorkspace)
+        guard hiddenOnPrimaryWorkspace else {
+            return
+        }
+        pauseForVisualConfirmation(duration: 0.5)
+
+        let repository = InMemorySnapshotRepository()
+        let scheduler = ManualScheduler()
+        let coordinator = SleepWakeCoordinator(
+            capturing: snapshotService,
+            restoring: snapshotService,
+            repository: repository,
+            readinessChecker: ImmediateRestoreReadinessChecker(),
+            scheduler: scheduler,
+            wakeDelay: 0,
+            retryInterval: 0.25,
+            maxWaitAfterWake: 10
+        )
+        coordinator.handleRestoreRequested(with: baselineSnapshots)
+        scheduler.runNext()
+
+        let remainedDeferred = waitUntil(timeout: 2.0) {
+            !self.isWindowOnScreen(window, ownerPID: appPID)
+        }
+        #expect(remainedDeferred)
+        guard remainedDeferred else {
+            return
+        }
+
+        let switchedAgainToSecondaryWorkspace = switchWorkspace(.right)
+        #expect(switchedAgainToSecondaryWorkspace)
+        guard switchedAgainToSecondaryWorkspace else {
+            return
+        }
+
+        let exposedAgainOnSecondaryWorkspace = waitUntil(timeout: 3.0) {
+            self.isWindowOnScreen(window, ownerPID: appPID)
+        }
+        #expect(exposedAgainOnSecondaryWorkspace)
+        guard exposedAgainOnSecondaryWorkspace else {
+            return
+        }
+
+        coordinator.handleEnvironmentDidChange(.activeSpaceDidChange)
+        scheduler.runNext()
+        let restoredOnSecondaryWorkspace = waitUntil(timeout: 6.0) {
+            self.isWindowOnScreen(window, ownerPID: appPID)
+                && self.displayID(for: window, screenService: screenService) == secondaryDisplayID
+        }
+        #expect(restoredOnSecondaryWorkspace)
+        guard restoredOnSecondaryWorkspace else {
             return
         }
 
@@ -777,6 +988,108 @@ struct RealAppScenarioTests {
         return pool.max(by: { windowArea($0.frame) < windowArea($1.frame) })
     }
 
+    private func isWindowOnScreen(_ window: AXUIElement, ownerPID: Int32? = nil) -> Bool {
+        guard let number = windowNumber(of: window) else {
+            return isWindowVisibleWithoutWindowNumber(window, ownerPID: ownerPID)
+        }
+        if onScreenWindowNumbers().contains(number) {
+            return true
+        }
+        return isWindowVisibleWithoutWindowNumber(window, ownerPID: ownerPID)
+    }
+
+    private func onScreenWindowNumbers() -> Set<Int> {
+        guard
+            let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
+                as? [[String: Any]]
+        else {
+            return []
+        }
+
+        return Set(
+            info.compactMap { entry in
+                (entry[kCGWindowNumber as String] as? NSNumber)?.intValue
+            })
+    }
+
+    private func isWindowVisibleWithoutWindowNumber(_ window: AXUIElement, ownerPID: Int32?) -> Bool
+    {
+        guard
+            let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
+                as? [[String: Any]],
+            let frame = frameForWindow(window)
+        else {
+            return false
+        }
+
+        let title = stringAttribute(window: window, attribute: kAXTitleAttribute as CFString)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        return info.contains { entry in
+            if let ownerPID {
+                guard (entry[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == ownerPID
+                else {
+                    return false
+                }
+            }
+
+            guard let bounds = windowBounds(from: entry) else {
+                return false
+            }
+
+            guard frameDistance(bounds, frame) <= 24 else {
+                return false
+            }
+
+            guard let title, !title.isEmpty else {
+                return true
+            }
+
+            let entryTitle = (entry[kCGWindowName as String] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+
+            guard let entryTitle, !entryTitle.isEmpty else {
+                return true
+            }
+
+            return entryTitle.contains(title) || title.contains(entryTitle)
+        }
+    }
+
+    private func windowBounds(from entry: [String: Any]) -> CGRect? {
+        guard let bounds = entry[kCGWindowBounds as String] as? NSDictionary else {
+            return nil
+        }
+        var rect = CGRect.zero
+        guard CGRectMakeWithDictionaryRepresentation(bounds as CFDictionary, &rect) else {
+            return nil
+        }
+        return rect
+    }
+
+    @discardableResult
+    private func switchWorkspace(_ direction: WorkspaceDirection) -> Bool {
+        let keyCode = direction == .left ? 123 : 124
+        let switched = runAppleScript(
+            """
+            tell application "System Events"
+                key code \(keyCode) using control down
+            end tell
+            """)
+        guard switched else {
+            return false
+        }
+        pauseForVisualConfirmation(duration: 0.5)
+        return true
+    }
+
+    private func escapedAppleScriptString(_ value: String) -> String {
+        value.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
     private func bestFreeCADChildWindow(for panel: FreeCADChildPanel, in windows: [LiveWindow])
         -> LiveWindow?
     {
@@ -1201,5 +1514,53 @@ struct RealAppScenarioTests {
         let role: String?
         let subrole: String?
         let frame: CGRect
+    }
+
+    private enum WorkspaceDirection {
+        case left
+        case right
+    }
+
+    private final class InMemorySnapshotRepository: SnapshotRepository {
+        private var snapshots: [WindowSnapshot] = []
+
+        func load() -> [WindowSnapshot] {
+            snapshots
+        }
+
+        func save(_ snapshots: [WindowSnapshot]) {
+            self.snapshots = snapshots
+        }
+    }
+
+    private final class ManualScheduler: SleepWakeScheduling {
+        private final class ManualTask: CancellableTask {
+            var isCancelled = false
+
+            func cancel() {
+                isCancelled = true
+            }
+        }
+
+        private var queued: [(task: ManualTask, action: () -> Void)] = []
+
+        @discardableResult
+        func schedule(after delay: TimeInterval, _ action: @escaping () -> Void) -> CancellableTask
+        {
+            let task = ManualTask()
+            queued.append((task: task, action: action))
+            return task
+        }
+
+        func runNext() {
+            guard !queued.isEmpty else {
+                return
+            }
+            let next = queued.removeFirst()
+            guard !next.task.isCancelled else {
+                return
+            }
+            next.action()
+        }
     }
 }

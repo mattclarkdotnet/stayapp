@@ -120,7 +120,8 @@ Each fixture should include expected capture output and expected restore result
 - Available windows must still restore when some app windows are deferred.
 - Re-running restore on an already-restored layout must be a no-op (no extra moves).
 - Deferred-only residuals must park without interval loops and retry on environment change.
-- Inactive-workspace deferred snapshots must retry only after `activeSpaceDidChange`,
+- Inactive-workspace deferred snapshots must remain pending across both wake-triggered
+  and user-triggered restore cycles, and retry only after `activeSpaceDidChange`,
   while non-workspace deferrals can retry on generic environment-change signals.
 - Matching must remain stable when titles are missing (untitled windows).
 
@@ -173,7 +174,8 @@ Scope:
 How:
 
 - run `swift test --filter StayIntegrationTests.RealAppScenarioTests`
-- tests launch real apps (Finder/TextEdit/FreeCAD/KiCad), move real windows across screens, then run capture/restore
+- tests launch real apps (Finder/TextEdit/FreeCAD/KiCad), move real windows across screens,
+  and for the workspace scenario switch real Mission Control spaces before running capture/restore
 - use logs (`log stream --predicate 'subsystem == "com.stay.app"'`) when investigating failures
 - for full sleep/wake scenarios, prefer single-command cycle mode:
   1. `swift run WakeCycleScenarios cycle finder|app|freecad|kicad`
@@ -189,6 +191,8 @@ How:
 Limitations:
 
 - requires a real two-external-display setup and Accessibility permission
+- Scenario 1.5 additionally requires two adjacent Mission Control workspaces and working
+  `control-left` / `control-right` space-switch shortcuts
 - FreeCAD Scenario 1.3 also requires visible child/tool windows as independent AX windows
 - true monitor wake timing and lock-screen transitions remain difficult to fully automate
 

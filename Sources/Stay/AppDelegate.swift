@@ -113,7 +113,7 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func restoreLayoutNow() {
-        guard let snapshotService, let repository else {
+        guard let coordinator, let repository else {
             updateStatus("Service unavailable")
             return
         }
@@ -130,17 +130,12 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let restoreResult = snapshotService.restore(from: snapshots)
-        if restoreResult.isComplete {
-            logger.info(
-                "Manual restore succeeded for \(snapshots.count, privacy: .public) snapshot(s)")
-            updateStatus("Restored \(snapshots.count) window(s)")
-        } else {
-            logger.warning(
-                "Manual restore incomplete (moved=\(restoreResult.movedWindowCount, privacy: .public) aligned=\(restoreResult.alreadyAlignedCount, privacy: .public) failures=\(restoreResult.recoverableFailureCount, privacy: .public))"
-            )
-            updateStatus("Could not restore windows yet")
-        }
+        // Reuse the coordinator's deferred-space state machine so windows hidden
+        // on inactive workspaces remain pending until that workspace becomes active.
+        coordinator.handleRestoreRequested(with: snapshots)
+        logger.info(
+            "Manual restore scheduled for \(snapshots.count, privacy: .public) snapshot(s)")
+        updateStatus("Restoring \(snapshots.count) window(s)")
     }
 
     @objc private func quit() {

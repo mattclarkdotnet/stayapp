@@ -55,6 +55,95 @@ struct SleepWakeCoordinatorTests {
         #expect(restore.calls.isEmpty)
     }
 
+    @Test("Manual restore request schedules an immediate restore")
+    func manualRestoreRequestSchedulesImmediateRestore() {
+        let snapshots = [sampleSnapshot(title: "Notes", index: 0)]
+
+        let capture = StubCaptureService()
+        let restore = SpyRestoreService()
+        let repository = InMemoryRepository()
+        let scheduler = ManualScheduler()
+
+        let coordinator = SleepWakeCoordinator(
+            capturing: capture,
+            restoring: restore,
+            repository: repository,
+            scheduler: scheduler,
+            wakeDelay: 1
+        )
+
+        coordinator.handleRestoreRequested(with: snapshots)
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 1)
+        #expect(restore.calls[0] == snapshots)
+        #expect(scheduler.pendingCount == 0)
+    }
+
+    @Test("Manual restore keeps inactive-workspace snapshots pending until space change")
+    func manualRestoreWaitsForActiveSpaceChange() {
+        let first = sampleSnapshot(title: "Primary Space", index: 0)
+        let second = sampleSnapshot(title: "Secondary Space", index: 1)
+        let snapshots = [first, second]
+
+        let capture = StubCaptureService()
+        let restore = SpyRestoreService()
+        restore.detailedResults = [
+            WindowRestoreResult(
+                isComplete: false,
+                movedWindowCount: 1,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 1,
+                deferredSnapshotCount: 1,
+                deferredInactiveWorkspaceSnapshots: [second],
+                resolvedSnapshots: [first]
+            ),
+            WindowRestoreResult(
+                isComplete: true,
+                movedWindowCount: 1,
+                alreadyAlignedCount: 0,
+                recoverableFailureCount: 0,
+                deferredSnapshotCount: 0,
+                resolvedSnapshots: [second]
+            ),
+        ]
+
+        let repository = InMemoryRepository()
+        let scheduler = ManualScheduler()
+        let readiness = SequencedReadinessChecker([true])
+
+        let coordinator = SleepWakeCoordinator(
+            capturing: capture,
+            restoring: restore,
+            repository: repository,
+            readinessChecker: readiness,
+            scheduler: scheduler,
+            wakeDelay: 1,
+            retryInterval: 0.1,
+            maxWaitAfterWake: 120
+        )
+
+        coordinator.handleRestoreRequested(with: snapshots)
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 1)
+        #expect(restore.calls[0] == snapshots)
+        #expect(scheduler.pendingCount == 0)
+
+        coordinator.handleEnvironmentDidChange(.sessionDidBecomeActive)
+        #expect(scheduler.pendingCount == 0)
+
+        coordinator.handleEnvironmentDidChange(.activeSpaceDidChange)
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 2)
+        #expect(restore.calls[1] == [second])
+        #expect(scheduler.pendingCount == 0)
+    }
+
     @Test("Repeated wake events schedule only one restore")
     func repeatedWakeEventsScheduleOnlyOneRestore() {
         let snapshots = [sampleSnapshot(title: "Mail", index: 0)]

@@ -32,15 +32,15 @@ public final class SleepWakeCoordinator {
     private var isSleeping = false
     // Last capture payload to restore after wake; overwritten on every sleep.
     private var cachedSnapshots: [WindowSnapshot] = []
-    // Unresolved work for the current wake cycle.
+    // Unresolved work for the current restore cycle (wake-driven or manual).
     private var pendingRestoreSnapshots: [WindowSnapshot] = []
     // Subset of pending snapshots known to belong to inactive workspaces.
     // These are re-queued only after `activeSpaceDidChange`.
     private var inactiveWorkspacePendingSnapshots: [WindowSnapshot] = []
-    private var isAwaitingPostWakeRestore = false
+    private var isAwaitingRestore = false
     private var restoreDeadline: Date?
     private var restoreTask: CancellableTask?
-    // Retry/convergence tracking for the current wake cycle.
+    // Retry/convergence tracking for the current restore cycle.
     private var stagnantRestoreAttemptCount = 0
     private var bestRecoverableFailureCount: Int?
     private var postTimeoutRetryCount = 0
@@ -113,7 +113,7 @@ public final class SleepWakeCoordinator {
         }
     }
 
-    /// Handles a wake event by scheduling post-wake restore attempts.
+    /// Handles a wake event by scheduling restore attempts for the captured snapshots.
     public func handleDidWake() {
         lock.lock()
         guard isSleeping else {
@@ -137,25 +137,41 @@ public final class SleepWakeCoordinator {
             return
         }
 
-        isAwaitingPostWakeRestore = true
-        pendingRestoreSnapshots = snapshots
-        inactiveWorkspacePendingSnapshots = []
-        restoreDeadline = Date().addingTimeInterval(maxWaitAfterWake)
-        resetRestoreAttemptTracking()
-        clearDeferredExposureWait()
-        if let restoreDeadline {
-            logger.info(
-                "Wake cycle started; awaiting restore for \(snapshots.count, privacy: .public) snapshot(s) with deadline \(restoreDeadline.ISO8601Format(), privacy: .public)"
-            )
+        startRestoreCycle(
+            with: snapshots,
+            initialDelay: wakeDelay,
+            reason: "wake"
+        )
+        lock.unlock()
+    }
+
+    /// Handles a user-triggered restore request from an explicit snapshot set.
+    public func handleRestoreRequested(with snapshots: [WindowSnapshot]) {
+        lock.lock()
+        guard !isSleeping else {
+            logger.debug("Ignoring manual restore request because coordinator is in sleeping state")
+            lock.unlock()
+            return
         }
-        scheduleRestoreAttempt(after: wakeDelay)
+
+        guard !snapshots.isEmpty else {
+            logger.debug("Ignoring manual restore request because no snapshots were provided")
+            lock.unlock()
+            return
+        }
+
+        startRestoreCycle(
+            with: snapshots,
+            initialDelay: 0,
+            reason: "manual"
+        )
         lock.unlock()
     }
 
     /// Handles environment signals that may unblock deferred restore work.
     public func handleEnvironmentDidChange(_ kind: EnvironmentChangeKind = .unspecified) {
         lock.lock()
-        guard !isSleeping, isAwaitingPostWakeRestore else {
+        guard !isSleeping, isAwaitingRestore else {
             lock.unlock()
             return
         }
@@ -199,7 +215,7 @@ public final class SleepWakeCoordinator {
 
     private func runRestoreAttempt() {
         lock.lock()
-        if isSleeping || !isAwaitingPostWakeRestore {
+        if isSleeping || !isAwaitingRestore {
             lock.unlock()
             return
         }
@@ -256,7 +272,7 @@ public final class SleepWakeCoordinator {
         )
 
         lock.lock()
-        guard !isSleeping, isAwaitingPostWakeRestore else {
+        guard !isSleeping, isAwaitingRestore else {
             logger.debug("Discarding restore result because state changed during restore execution")
             lock.unlock()
             return
@@ -409,6 +425,26 @@ public final class SleepWakeCoordinator {
         lock.unlock()
     }
 
+    private func startRestoreCycle(
+        with snapshots: [WindowSnapshot],
+        initialDelay: TimeInterval,
+        reason: StaticString
+    ) {
+        clearRestoreState()
+        isAwaitingRestore = true
+        pendingRestoreSnapshots = snapshots
+        inactiveWorkspacePendingSnapshots = []
+        restoreDeadline = Date().addingTimeInterval(maxWaitAfterWake)
+        resetRestoreAttemptTracking()
+        clearDeferredExposureWait()
+        if let restoreDeadline {
+            logger.info(
+                "\(reason, privacy: .public) restore cycle started for \(snapshots.count, privacy: .public) snapshot(s) with deadline \(restoreDeadline.ISO8601Format(), privacy: .public)"
+            )
+        }
+        scheduleRestoreAttempt(after: initialDelay)
+    }
+
     private func activeWorkspacePendingSnapshots() -> [WindowSnapshot] {
         SnapshotSetOperations.removeResolved(
             from: pendingRestoreSnapshots,
@@ -459,12 +495,12 @@ public final class SleepWakeCoordinator {
     }
 
     private func clearRestoreState() {
-        logger.debug("Clearing post-wake restore state")
+        logger.debug("Clearing active restore state")
         restoreTask?.cancel()
         restoreTask = nil
         pendingRestoreSnapshots = []
         inactiveWorkspacePendingSnapshots = []
-        isAwaitingPostWakeRestore = false
+        isAwaitingRestore = false
         restoreDeadline = nil
         resetRestoreAttemptTracking()
         clearDeferredExposureWait()

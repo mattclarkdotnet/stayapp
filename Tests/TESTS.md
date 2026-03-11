@@ -135,6 +135,7 @@ Scenarios currently automated from `SCENARIOS.md`:
 
 - two Finder windows, one per screen
 - two non-Finder app windows (TextEdit), one per screen
+- one TextEdit window on a secondary workspace, restored when that workspace becomes active
 - FreeCAD main window + child windows (tasks/model/report/python console) across two screens
 - KiCad main + PCB editor on primary screen, schematic editor on secondary screen
 - full wake/sleep Finder two-window scenario (`WakeCycleScenarios prepare/verify finder`)
@@ -171,6 +172,8 @@ Add/expand tests for:
 - environment-change retrigger after timeout
 - stale snapshot identity (PID drift, bundle/name fallback behavior)
 - deferred-only residuals parking until active-space/environment change
+- manual restore requests retaining deferred inactive-workspace snapshots until a later
+  `activeSpaceDidChange`
 - inactive-workspace-specific deferrals (`deferredInactiveWorkspaceSnapshots`) only
   retrying after `activeSpaceDidChange`
 - untitled multi-window matching using enriched identity (`windowNumber`, role/subrole)
