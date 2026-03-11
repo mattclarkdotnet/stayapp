@@ -66,9 +66,10 @@ When the user saves the window layout
 And the user moves that TextEdit window to `primary_screen` (still on `secondary_workspace`)
 And the user switches to `primary_workspace`
 And the user restores the window layout
-Then the TextEdit window should remain unchanged while `secondary_workspace` is inactive
+Then Stay should restore the TextEdit window as soon as macOS exposes it for reliable movement
+And Stay should not force a workspace switch as part of restore
 When the user switches back to `secondary_workspace`
-Then the TextEdit window should be restored on `secondary_screen`
+Then the TextEdit window should be restored on `secondary_screen` no later than that workspace activation
 
 ## 2. Scenarios with a full sleep/wake cycle:
 ### Scenario 2.1: 2 finder windows
