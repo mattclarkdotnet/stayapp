@@ -1038,7 +1038,8 @@ struct WakeCycleScenarioRunner {
             return false
         }
 
-        // LaunchAgent is loaded immediately; avoid resuming verify before the sleep has actually happened.
+        // LaunchAgent fallback may run before the wake boundary has completed.
+        // Enforce a minimum delay so resume does not verify stale pre-sleep layout state.
         let elapsed = Date().timeIntervalSince(sleepIssuedAt)
         return elapsed >= 45
     }
@@ -1830,6 +1831,7 @@ struct WakeCycleScenarioRunner {
         pids: [Int32],
         timeout: TimeInterval
     ) -> Bool {
+        // Require repeated readiness hits to avoid starting restore during transient AX exposure.
         guard !trackedWindows.isEmpty else {
             print("App/window readiness OK (no tracked windows).")
             return true
