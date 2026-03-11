@@ -249,6 +249,7 @@ Wake-cycle integration uses the `WakeCycleScenarios` executable:
 - generic runner utilities in `RunnerSupport.swift`
 - app/PID/window discovery helpers in `AppWindowDiscoverySupport.swift`
 - scenario precondition/display/script setup helpers in `ScenarioSetupSupport.swift`
+- prepare/verify command orchestration in `ScenarioCommandSupport.swift`
 - AX/window frame + display helpers in `WindowAXSupport.swift`
 - display/app readiness waiting helpers in `ReadinessSupport.swift`
 - verification/readiness/restore-convergence helpers in `VerificationSupport.swift`

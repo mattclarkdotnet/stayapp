@@ -57,7 +57,8 @@ PLAN.md must be replaced every time the roadmap changes, so that it always repre
 - target MacOS tahoe and above
 
 ## General design principles
-- Testable code is good code.  Use dependency injection and other techniques to make code testable.
+- Testable code is good code - use dependency injection and other techniques to make code testable.
+- Behavioural tests are preferred over other test types - they test the behavior of the system as a whole rather than individual components.  Invest in automating behavioural tests that live in `SCENARIOS.md`
 - Prefer testability over performance - given the choice between an implementation that is easy to test and one that would be faster, prefer the more testable one
 - Avoid tests that are implementation dependent - refactoring should not require wholesale changes to the test suite (apart from naming changes)
 - Use state machines to model flow control and transitions - don't use ad-hoc procedural code to manage state
