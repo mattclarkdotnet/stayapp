@@ -6,6 +6,11 @@
 - `primary_screen`: the primary macOS display (menu bar display).
 - `secondary_screen`: the non-primary external display used in two-screen scenarios.
 
+## Workspace Identifier Conventions
+
+- `primary_workspace`: the currently active macOS Mission Control space at scenario start.
+- `secondary_workspace`: a second Mission Control space on the same display setup.
+
 ## 1. Scenarios without a full sleep/wake cycle:
 ### Scenario 1.1: 2 finder windows
 Given that the user has two external screens (`screen_1` and `screen_2`)
@@ -50,6 +55,20 @@ And the user restores the window layout
 Then the main KiCad window should be restored on `primary_screen`
 And the PCB editor window should be restored on `primary_screen`
 And the schematic editor window should be restored on `secondary_screen`
+
+### Scenario 1.5: Basic app window on `secondary_workspace`
+Given that the user has two external screens (`primary_screen` and `secondary_screen`)
+And the user has two macOS workspaces (`primary_workspace` and `secondary_workspace`)
+And the user's computer has no internal screen
+And TextEdit is launched
+And a TextEdit window is on `secondary_workspace` on `secondary_screen`
+When the user saves the window layout
+And the user moves that TextEdit window to `primary_screen` (still on `secondary_workspace`)
+And the user switches to `primary_workspace`
+And the user restores the window layout
+Then the TextEdit window should remain unchanged while `secondary_workspace` is inactive
+When the user switches back to `secondary_workspace`
+Then the TextEdit window should be restored on `secondary_screen`
 
 ## 2. Scenarios with a full sleep/wake cycle:
 ### Scenario 2.1: 2 finder windows
