@@ -57,11 +57,12 @@ PLAN.md must be replaced every time the roadmap changes, so that it always repre
 - target MacOS tahoe and above
 
 ## General design principles
-- Use state machines to model flow control and transitions - don't use ad-hoc proceduralcode to manage state
-- Parse, don't validate - use refinement types to add state semantics. See https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/ 
-- Functional core, imperative shell - most functions should be pure, if they are not then they should be idempotent
-- Use type-driven-design - functions should be defined by their types, not their implementation
+- Testable code is good code.  Use dependency injection and other techniques to make code testable.
 - Prefer testability over performance - given the choice between an implementation that is easy to test and one that would be faster, prefer the more testable one
 - Avoid tests that are implementation dependent - refactoring should not require wholesale changes to the test suite (apart from naming changes)
+- Use state machines to model flow control and transitions - don't use ad-hoc procedural code to manage state
+- Parse, don't validate - use refinement types and type aliases. See https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/ 
+- Functional core, imperative shell - most functions should be pure, if they are not then they should be idempotent
+- Use type-driven-design - functions should be defined by their types, not their implementation
 - Prefer smaller classes, modules and functions - use the single responsibility principle, and aim to keep source files below 500 lines
 -

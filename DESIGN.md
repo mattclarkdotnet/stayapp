@@ -248,6 +248,7 @@ Wake-cycle integration uses the `WakeCycleScenarios` executable:
 - orchestration and command routing in `main.swift`
 - generic runner utilities in `RunnerSupport.swift`
 - app/PID/window discovery helpers in `AppWindowDiscoverySupport.swift`
+- scenario precondition/display/script setup helpers in `ScenarioSetupSupport.swift`
 - AX/window frame + display helpers in `WindowAXSupport.swift`
 - verification/readiness/restore-convergence helpers in `VerificationSupport.swift`
 - FreeCAD-specific window-selection heuristics in `FreeCADWindowSelectionSupport.swift`
