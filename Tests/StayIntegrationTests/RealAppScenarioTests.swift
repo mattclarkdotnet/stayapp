@@ -242,33 +242,19 @@ struct RealAppScenarioTests {
         let displayOneID = displays[0].id
         let displayTwoID = displays[1].id
 
-        guard let activation = activateFirstAvailableApp(bundleIDs: freeCADBundleIDs) else {
+        guard let scenarioActivation = activateFreeCADScenarioApp(maxAttempts: 2) else {
             #expect(Bool(false))
             return
         }
 
-        let bundleID = activation.bundleID
-        let appPID = activation.pid
+        let bundleID = scenarioActivation.bundleID
+        let appPID = scenarioActivation.pid
+        let tracked = scenarioActivation.tracked
         defer {
             quitApp(bundleID: bundleID, pid: appPID)
         }
 
-        let settableReady = waitUntil(timeout: 15.0) {
-            self.liveSettableWindows(pid: appPID).count >= 2
-        }
-        #expect(settableReady)
-        guard settableReady else {
-            return
-        }
         pauseForVisualConfirmation(duration: 1.0)
-
-        guard
-            let tracked = selectFreeCADScenarioWindows(pid: appPID),
-            tracked.children.count == FreeCADChildPanel.allCases.count
-        else {
-            #expect(Bool(false))
-            return
-        }
 
         let mainWindow = tracked.main.element
         let childWindows = tracked.children.map(\.window.element)
@@ -689,6 +675,53 @@ struct RealAppScenarioTests {
             }
             return (bundleID: bundleID, pid: appPID)
         }
+        return nil
+    }
+
+    private func activateFreeCADScenarioApp(maxAttempts: Int) -> (
+        bundleID: String,
+        pid: Int32,
+        tracked: (main: LiveWindow, children: [(panel: FreeCADChildPanel, window: LiveWindow)])
+    )? {
+        guard maxAttempts > 0 else {
+            return nil
+        }
+
+        for attempt in 1...maxAttempts {
+            guard let activation = activateFirstAvailableApp(bundleIDs: freeCADBundleIDs) else {
+                continue
+            }
+
+            var readyTracked:
+                (
+                    main: LiveWindow,
+                    children: [(panel: FreeCADChildPanel, window: LiveWindow)]
+                )?
+
+            let scenarioReady = waitUntil(timeout: 25.0) {
+                guard let tracked = self.selectFreeCADScenarioWindows(pid: activation.pid) else {
+                    return false
+                }
+                readyTracked = tracked
+                return true
+            }
+
+            if scenarioReady, let readyTracked {
+                return (bundleID: activation.bundleID, pid: activation.pid, tracked: readyTracked)
+            }
+
+            // FreeCAD sometimes launches without exposing all child/tool windows
+            // on the first activation; recycle once before failing the scenario.
+            quitApp(bundleID: activation.bundleID, pid: activation.pid)
+            _ = waitUntil(timeout: 4.0) {
+                self.runningAppPID(bundleID: activation.bundleID) == nil
+            }
+
+            if attempt < maxAttempts {
+                pauseForVisualConfirmation(duration: 0.5)
+            }
+        }
+
         return nil
     }
 

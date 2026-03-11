@@ -88,6 +88,7 @@ swift run WakeCycleScenarios verify kicad --check-only
 - Accessibility permission for Stay/test process must be granted.
 - Finder, TextEdit, FreeCAD, and KiCad must be launchable.
 - FreeCAD child windows used in Scenario 1.3 must be visible as independent AX windows.
+- FreeCAD Scenario 1.3 includes one app relaunch retry if the expected child windows are not exposed on first activation.
 - KiCad Scenario 1.4 requires visible windows for the KiCad app, PCB editor, and schematic editor.
 - Scenario 1.3 explicitly repositions FreeCAD windows before capture:
   main window on screen 1, child windows (`tasks`, `model`, `report view`, `python console`) on screen 2.
