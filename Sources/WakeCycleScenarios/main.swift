@@ -6,50 +6,6 @@ import WakeCycleScenariosCore
 
 @MainActor
 struct WakeCycleScenarioRunner {
-    enum Command: String {
-        case prepare
-        case verify
-        case cycle
-        case resume
-    }
-
-    enum Scenario: String {
-        case finder
-        case app
-        case freecad
-        case kicad
-
-        var bundleID: String {
-            candidateBundleIDs[0]
-        }
-
-        var candidateBundleIDs: [String] {
-            switch self {
-            case .finder:
-                return ["com.apple.finder"]
-            case .app:
-                return ["com.apple.TextEdit"]
-            case .freecad:
-                return ["org.freecad.FreeCAD", "org.freecadweb.FreeCAD"]
-            case .kicad:
-                return ["org.kicad.kicad", "org.kicad.kicad-nightly"]
-            }
-        }
-
-        var appName: String {
-            switch self {
-            case .finder:
-                return "Finder"
-            case .app:
-                return "TextEdit"
-            case .freecad:
-                return "FreeCAD"
-            case .kicad:
-                return "KiCad"
-            }
-        }
-    }
-
     enum FreeCADChildPanel: String, CaseIterable {
         case tasks = "tasks"
         case model = "model"
@@ -73,6 +29,8 @@ struct WakeCycleScenarioRunner {
     let kicadPCBBundleIDs = ["org.kicad.pcbnew", "org.kicad.pcbnew-nightly"]
     let kicadSchematicBundleIDs = ["org.kicad.eeschema", "org.kicad.eeschema-nightly"]
 
+    typealias Command = WakeCycleScenariosCore.WakeCycleCommand
+    typealias Scenario = WakeCycleScenariosCore.WakeCycleScenario
     typealias CodableRect = WakeCycleScenariosCore.CodableRect
     typealias TrackedWindow = WakeCycleScenariosCore.TrackedWindow
     typealias ScenarioState = WakeCycleScenariosCore.ScenarioState
@@ -142,13 +100,8 @@ struct WakeCycleScenarioRunner {
             return 1
         }
 
-        guard
-            let command = Command(rawValue: invocation.command.rawValue),
-            let scenario = Scenario(rawValue: invocation.scenario.rawValue)
-        else {
-            fputs("error: unsupported command/scenario mapping\n", stderr)
-            return 1
-        }
+        let command = invocation.command
+        let scenario = invocation.scenario
 
         do {
             switch command {

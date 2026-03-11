@@ -12,7 +12,7 @@ Automated tests cover two layers:
 - Core tests: `Tests/StayCoreTests/SleepWakeCoordinatorTests.swift`
 - Core helper tests: `Tests/StayCoreTests/SnapshotSetOperationsTests.swift`
 - Wake-cycle core tests: `Tests/WakeCycleScenariosCoreTests/*`
-- Wake-cycle core coverage includes invocation parsing, cycle-state codecs, and scenario-state/report codecs
+- Wake-cycle core coverage includes invocation parsing, scenario metadata, cycle-state codecs, and scenario-state/report codecs
 - Fixture round-trip tests: `Tests/StayIntegrationTests/WindowRoundTripTests.swift`
 - Real-app scenario tests: `Tests/StayIntegrationTests/RealAppScenarioTests.swift`
 
