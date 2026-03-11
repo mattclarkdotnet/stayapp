@@ -243,6 +243,13 @@ Wake-cycle integration uses the `WakeCycleScenarios` executable:
   but is disabled by default.
 - Successful completion writes the standard scenario report and removes temporary cycle-state data.
 
+`WakeCycleScenarios` is intentionally split into focused support modules:
+
+- orchestration and command routing in `main.swift`
+- generic runner utilities in `RunnerSupport.swift`
+- AX/window frame + display helpers in `WindowAXSupport.swift`
+- verification/readiness/restore-convergence helpers in `VerificationSupport.swift`
+
 Physical sleep/display wake timing is intentionally left for manual/QA validation on real hardware.
 
 ## Observability
