@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 import Foundation
+import WakeCycleScenariosCore
 
 @MainActor
 struct WakeCycleScenarioRunner {
@@ -113,25 +114,8 @@ struct WakeCycleScenarioRunner {
         let details: [String]
     }
 
-    enum WakeCyclePhase: String, Codable {
-        case prepared
-        case armedForWake
-        case resumedInRunner
-        case verifying
-        case completed
-        case failed
-    }
-
-    struct WakeCycleState: Codable {
-        var scenario: String
-        var createdAt: Date
-        var executablePath: String
-        var workingDirectoryPath: String
-        var launchAgentLabel: String
-        var launchAgentPlistPath: String
-        var sleepIssuedAt: Date?
-        var phase: WakeCyclePhase
-    }
+    typealias WakeCyclePhase = WakeCycleScenariosCore.WakeCyclePhase
+    typealias WakeCycleState = WakeCycleScenariosCore.WakeCycleState
 
     struct VerifyTimingOptions {
         let displayReadinessTimeout: TimeInterval
@@ -175,49 +159,48 @@ struct WakeCycleScenarioRunner {
     }
 
     mutating func run() -> Int32 {
-        guard args.count >= 3,
-            let command = Command(rawValue: args[1].lowercased()),
-            let scenario = Scenario(rawValue: args[2].lowercased())
-        else {
+        let invocation: WakeCycleInvocation
+        do {
+            invocation = try WakeCycleInvocationParser.parse(arguments: args)
+        } catch WakeCycleInvocationParseError.usage {
             printUsage()
             return 2
+        } catch WakeCycleInvocationParseError.unknownCommand(let rawCommand) {
+            fputs("error: unknown command '\(rawCommand)'\n", stderr)
+            return 1
+        } catch WakeCycleInvocationParseError.unknownScenario(let rawScenario) {
+            fputs("error: unknown scenario '\(rawScenario)'\n", stderr)
+            return 1
+        } catch WakeCycleInvocationParseError.unknownOptions(let options) {
+            fputs("error: unknown option(s): \(options.joined(separator: ", "))\n", stderr)
+            return 1
+        } catch {
+            fputs("error: \(error)\n", stderr)
+            return 1
+        }
+
+        guard
+            let command = Command(rawValue: invocation.command.rawValue),
+            let scenario = Scenario(rawValue: invocation.scenario.rawValue)
+        else {
+            fputs("error: unsupported command/scenario mapping\n", stderr)
+            return 1
         }
 
         do {
-            let options = Array(args.dropFirst(3))
             switch command {
             case .prepare:
-                let unknown = options.filter { $0 != "--no-sleep" }
-                guard unknown.isEmpty else {
-                    throw RunnerError.failed(
-                        "unknown prepare option(s): \(unknown.joined(separator: ", "))")
-                }
-                let shouldSleep = !options.contains("--no-sleep")
-                try prepare(scenario: scenario, shouldSleep: shouldSleep)
+                try prepare(scenario: scenario, shouldSleep: invocation.shouldSleep)
             case .verify:
-                let unknown = options.filter { $0 != "--check-only" }
-                guard unknown.isEmpty else {
-                    throw RunnerError.failed(
-                        "unknown verify option(s): \(unknown.joined(separator: ", "))")
-                }
-                let checkOnly = options.contains("--check-only")
                 try verify(
                     scenario: scenario,
-                    checkOnly: checkOnly,
+                    checkOnly: invocation.checkOnly,
                     timings: .manual,
                     skipPrerequisiteCheck: false
                 )
             case .cycle:
-                guard options.isEmpty else {
-                    throw RunnerError.failed(
-                        "unknown cycle option(s): \(options.joined(separator: ", "))")
-                }
                 try cycle(scenario: scenario)
             case .resume:
-                guard options.isEmpty else {
-                    throw RunnerError.failed(
-                        "unknown resume option(s): \(options.joined(separator: ", "))")
-                }
                 try resume(scenario: scenario)
             }
             return 0
@@ -244,230 +227,6 @@ struct WakeCycleScenarioRunner {
               - cycle runs prepare, sleeps the machine, waits for wake/session readiness, then auto-runs verify.
               - optional fallback: set STAY_CYCLE_ENABLE_LAUNCH_AGENT=1 to enable LaunchAgent-based resume.
             """)
-    }
-
-    var scenarioDirectory: URL {
-        fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent(
-                "Library/Application Support/Stay/WakeCycleScenarios", isDirectory: true)
-    }
-
-    func stateURL(for scenario: Scenario) -> URL {
-        scenarioDirectory.appendingPathComponent("\(scenario.rawValue)-state.json")
-    }
-
-    func reportURL(for scenario: Scenario) -> URL {
-        scenarioDirectory.appendingPathComponent("\(scenario.rawValue)-report.json")
-    }
-
-    private func cycleStateURL(for scenario: Scenario) -> URL {
-        scenarioDirectory.appendingPathComponent("\(scenario.rawValue)-cycle.json")
-    }
-
-    private func launchAgentLabel(for scenario: Scenario) -> String {
-        "com.stayapp.wakecyclescenarios.\(scenario.rawValue)"
-    }
-
-    private func launchAgentPlistURL(for scenario: Scenario) -> URL {
-        fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/LaunchAgents", isDirectory: true)
-            .appendingPathComponent("\(launchAgentLabel(for: scenario)).plist")
-    }
-
-    private func cycle(scenario: Scenario) throws {
-        try ensurePrerequisites()
-        try prepare(scenario: scenario, shouldSleep: false)
-
-        let cycleURL = cycleStateURL(for: scenario)
-        let launchAgentFallbackEnabled = launchAgentFallbackIsEnabled()
-        var cycleState = WakeCycleState(
-            scenario: scenario.rawValue,
-            createdAt: Date(),
-            executablePath: resolvedExecutablePath(),
-            workingDirectoryPath: fileManager.currentDirectoryPath,
-            launchAgentLabel: launchAgentLabel(for: scenario),
-            launchAgentPlistPath: launchAgentPlistURL(for: scenario).path,
-            sleepIssuedAt: nil,
-            phase: .prepared
-        )
-        try persistCycleState(cycleState, to: cycleURL)
-        try configureCycleLaunchAgentFallback(
-            enabled: launchAgentFallbackEnabled,
-            scenario: scenario,
-            state: cycleState
-        )
-        try persistCyclePhase(
-            .armedForWake,
-            sleepIssuedAt: Date(),
-            state: &cycleState,
-            to: cycleURL
-        )
-
-        print("Cycle mode: sleeping machine in 3 seconds.")
-        print("After wake/login, this runner will continue automatically.")
-        Thread.sleep(forTimeInterval: 3)
-        _ = runCommand("/usr/bin/pmset", ["sleepnow"])
-
-        print("Cycle mode: waiting for wake/session signals.")
-        _ = waitForWakeOrSessionSignal(timeout: 20)
-
-        try persistCyclePhase(
-            .resumedInRunner,
-            sleepIssuedAt: cycleState.sleepIssuedAt,
-            state: &cycleState,
-            to: cycleURL
-        )
-
-        do {
-            try runAutomatedVerifyAfterWake(
-                scenario: scenario,
-                timings: .wakeCycle,
-                source: "cycle-runner",
-                skipPrerequisiteCheck: true
-            )
-            try finalizeCycleSuccess(
-                scenario: scenario,
-                state: &cycleState,
-                cycleURL: cycleURL,
-                launchAgentFallbackEnabled: launchAgentFallbackEnabled
-            )
-        } catch {
-            finalizeCycleFailure(
-                scenario: scenario,
-                state: &cycleState,
-                cycleURL: cycleURL,
-                launchAgentFallbackEnabled: launchAgentFallbackEnabled
-            )
-            throw error
-        }
-    }
-
-    private func resume(scenario: Scenario) throws {
-        try ensurePrerequisites()
-        let cycleURL = cycleStateURL(for: scenario)
-
-        guard var cycleState = try? loadCycleState(from: cycleURL) else {
-            print(
-                "Resume mode: no cycle state found for scenario '\(scenario.rawValue)'; nothing to do."
-            )
-            return
-        }
-
-        guard cycleState.phase == .armedForWake else {
-            print("Resume mode: cycle phase '\(cycleState.phase.rawValue)' is not resumable.")
-            return
-        }
-
-        if !canResumeVerify(for: cycleState) {
-            print("Resume mode: wake not yet confirmed; leaving cycle armed.")
-            return
-        }
-
-        try persistCyclePhase(
-            .verifying,
-            sleepIssuedAt: cycleState.sleepIssuedAt,
-            state: &cycleState,
-            to: cycleURL
-        )
-
-        do {
-            try runAutomatedVerifyAfterWake(
-                scenario: scenario,
-                timings: .wakeCycle,
-                source: "launch-agent",
-                skipPrerequisiteCheck: false
-            )
-            try finalizeCycleSuccess(
-                scenario: scenario,
-                state: &cycleState,
-                cycleURL: cycleURL,
-                launchAgentFallbackEnabled: true
-            )
-        } catch {
-            finalizeCycleFailure(
-                scenario: scenario,
-                state: &cycleState,
-                cycleURL: cycleURL,
-                launchAgentFallbackEnabled: true
-            )
-            throw error
-        }
-    }
-
-    private func persistCyclePhase(
-        _ phase: WakeCyclePhase,
-        sleepIssuedAt: Date?,
-        state: inout WakeCycleState,
-        to cycleURL: URL
-    ) throws {
-        state.phase = phase
-        state.sleepIssuedAt = sleepIssuedAt
-        try persistCycleState(state, to: cycleURL)
-    }
-
-    private func configureCycleLaunchAgentFallback(
-        enabled: Bool,
-        scenario: Scenario,
-        state: WakeCycleState
-    ) throws {
-        guard enabled else {
-            print(
-                "Cycle mode: LaunchAgent fallback is disabled (set STAY_CYCLE_ENABLE_LAUNCH_AGENT=1 to enable)."
-            )
-            uninstallWakeResumeLaunchAgent(for: scenario, state: state)
-            return
-        }
-        try installWakeResumeLaunchAgent(for: scenario, state: state)
-    }
-
-    private func finalizeCycleSuccess(
-        scenario: Scenario,
-        state: inout WakeCycleState,
-        cycleURL: URL,
-        launchAgentFallbackEnabled: Bool
-    ) throws {
-        try persistCyclePhase(
-            .completed,
-            sleepIssuedAt: state.sleepIssuedAt,
-            state: &state,
-            to: cycleURL
-        )
-        if launchAgentFallbackEnabled {
-            uninstallWakeResumeLaunchAgent(for: scenario, state: state)
-        }
-        try? fileManager.removeItem(at: cycleURL)
-    }
-
-    private func finalizeCycleFailure(
-        scenario: Scenario,
-        state: inout WakeCycleState,
-        cycleURL: URL,
-        launchAgentFallbackEnabled: Bool
-    ) {
-        state.phase = .failed
-        try? persistCycleState(state, to: cycleURL)
-        if launchAgentFallbackEnabled {
-            uninstallWakeResumeLaunchAgent(for: scenario, state: state)
-        }
-    }
-
-    private func runAutomatedVerifyAfterWake(
-        scenario: Scenario,
-        timings: VerifyTimingOptions,
-        source: String,
-        skipPrerequisiteCheck: Bool
-    ) throws {
-        print("Auto-verify start (source=\(source), scenario=\(scenario.rawValue)).")
-        try verify(
-            scenario: scenario,
-            checkOnly: false,
-            timings: timings,
-            skipPrerequisiteCheck: skipPrerequisiteCheck
-        )
-    }
-
-    private func launchAgentFallbackIsEnabled() -> Bool {
-        ProcessInfo.processInfo.environment["STAY_CYCLE_ENABLE_LAUNCH_AGENT"] == "1"
     }
 
 }

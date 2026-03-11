@@ -1,15 +1,18 @@
 import AppKit
 import Foundation
+import WakeCycleScenariosCore
 
 // Design intent: isolate wake-cycle control plumbing (state persistence,
 // wake/session signal waiting, launch-agent fallback lifecycle).
 extension WakeCycleScenarioRunner {
     func persistCycleState(_ state: WakeCycleState, to url: URL) throws {
-        try writeJSON(state, to: url)
+        let data = try WakeCycleStateCodec.encode(state)
+        try data.write(to: url, options: .atomic)
     }
 
     func loadCycleState(from url: URL) throws -> WakeCycleState {
-        try readJSON(WakeCycleState.self, from: url)
+        let data = try Data(contentsOf: url)
+        return try WakeCycleStateCodec.decode(data)
     }
 
     func resolvedExecutablePath() -> String {

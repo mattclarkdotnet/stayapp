@@ -14,16 +14,24 @@ let package = Package(
         .target(
             name: "StayCore"
         ),
+        .target(
+            name: "WakeCycleScenariosCore"
+        ),
         .executableTarget(
             name: "Stay",
             dependencies: ["StayCore"]
         ),
         .executableTarget(
-            name: "WakeCycleScenarios"
+            name: "WakeCycleScenarios",
+            dependencies: ["WakeCycleScenariosCore"]
         ),
         .testTarget(
             name: "StayCoreTests",
             dependencies: ["StayCore"]
+        ),
+        .testTarget(
+            name: "WakeCycleScenariosCoreTests",
+            dependencies: ["WakeCycleScenariosCore"]
         ),
         .testTarget(
             name: "StayIntegrationTests",

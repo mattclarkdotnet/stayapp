@@ -137,6 +137,8 @@ Scope:
 
 - `StayCore` state machine and retry logic (`SleepWakeCoordinator`)
 - pure snapshot-set transforms (`SnapshotSetOperations`) for per-app merge and resolved-snapshot pruning
+- `WakeCycleScenariosCore` deterministic parsing/serialization helpers
+  (`WakeCycleInvocationParser`, `WakeCycleStateCodec`)
 - event ordering and idempotency (duplicate wake, wake-before-sleep, repeated sleep)
 - persistence fallback behavior
 - readiness and restore retry interactions
@@ -150,6 +152,7 @@ Why:
 Gate:
 
 - must pass for every change set (`swift test`)
+- for parser/state refactors, run `swift test --filter WakeCycleScenariosCoreTests`
 - seeded fuzz traces live in `StayCoreTests` and should stay deterministic/replayable
 
 ### 2. Integration Tests (scripted/system-level, still mostly automated)

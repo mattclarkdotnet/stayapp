@@ -246,6 +246,8 @@ Wake-cycle integration uses the `WakeCycleScenarios` executable:
 `WakeCycleScenarios` is intentionally split into focused support modules:
 
 - orchestration and command routing in `main.swift`
+- scenario path/report/launch-agent naming helpers in `ScenarioPathSupport.swift`
+- wake-cycle `cycle`/`resume` command orchestration in `CycleCommandSupport.swift`
 - generic runner utilities in `RunnerSupport.swift`
 - app/PID/window discovery helpers in `AppWindowDiscoverySupport.swift`
 - scenario precondition/display/script setup helpers in `ScenarioSetupSupport.swift`
@@ -255,6 +257,11 @@ Wake-cycle integration uses the `WakeCycleScenarios` executable:
 - verification/readiness/restore-convergence helpers in `VerificationSupport.swift`
 - FreeCAD-specific window-selection heuristics in `FreeCADWindowSelectionSupport.swift`
 - wake-cycle signal/launch-agent/state-control helpers in `WakeCycleControlSupport.swift`
+- shared non-AppKit parser/state-codec logic in `WakeCycleScenariosCore`
+  (`InvocationParsing.swift`, `CycleStateCodec.swift`)
+
+`WakeCycleScenariosCore` isolates deterministic command/state code from AppKit runtime
+code so parser/state behavior can be unit tested without launching apps or windows.
 
 Physical sleep/display wake timing is intentionally left for manual/QA validation on real hardware.
 

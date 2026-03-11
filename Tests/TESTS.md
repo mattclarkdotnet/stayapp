@@ -11,6 +11,7 @@ Automated tests cover two layers:
 
 - Core tests: `Tests/StayCoreTests/SleepWakeCoordinatorTests.swift`
 - Core helper tests: `Tests/StayCoreTests/SnapshotSetOperationsTests.swift`
+- Wake-cycle core tests: `Tests/WakeCycleScenariosCoreTests/*`
 - Fixture round-trip tests: `Tests/StayIntegrationTests/WindowRoundTripTests.swift`
 - Real-app scenario tests: `Tests/StayIntegrationTests/RealAppScenarioTests.swift`
 
@@ -18,6 +19,12 @@ Automated tests cover two layers:
 
 ```bash
 swift test
+```
+
+To run deterministic wake-cycle parser/state tests only:
+
+```bash
+swift test --filter WakeCycleScenariosCoreTests
 ```
 
 To run only the real-app scenarios:
