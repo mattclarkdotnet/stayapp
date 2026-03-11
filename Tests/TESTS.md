@@ -23,6 +23,8 @@ To run only the real-app scenarios:
 
 ```bash
 swift test --filter StayIntegrationTests.RealAppScenarioTests
+# disable visual confirmation delays (optional)
+STAY_REALAPP_VISUAL_PAUSE=0 swift test --filter StayIntegrationTests.RealAppScenarioTests
 ```
 
 Wake-cycle scenarios (with real sleep/wake) use the runner executable:
@@ -82,6 +84,7 @@ swift run WakeCycleScenarios verify kicad --check-only
   main window on screen 1, child windows (`tasks`, `model`, `report view`, `python console`) on screen 2.
 - Scenario 1.3 uses position-only moves for FreeCAD windows so tool-window sizes are preserved.
 - Running these tests will visibly move windows across screens.
+- Visual confirmation delays are enabled by default; set `STAY_REALAPP_VISUAL_PAUSE=0` to disable them.
 - TextEdit, FreeCAD, and KiCad real-app scenarios explicitly quit those apps during cleanup.
 - For wake-cycle scenarios, prefer `cycle`; use `prepare`/`verify` split flow for debugging.
 - `verify` waits for display and app/window readiness first, then perturbs one tracked window, restores, and validates display and frame placement.

@@ -1,29 +1,28 @@
-# Plan: Full-Cycle Sleep/Wake Automation
+# Plan: Code Cleanup And Consolidation
 
 ## Roadmap alignment
 
-- This plan implements `ROADMAP.md` `Now`: full-cycle sleep/wake scenario automation with wake-only human intervention.
+- This plan implements `ROADMAP.md` `Now`: code cleanup and consolidation before starting workspace-specific behavior.
 
 ## Objective
 
-- Ensure wake-cycle scenarios run end-to-end with no manual post-wake commands; after wake/login, window discovery, restore, verification, and report generation must run automatically.
+- Reduce complexity and drift by aligning documentation with actual behavior, extracting repeated logic into focused helpers/modules, and adding targeted tests/comments so the current wake-cycle baseline remains stable while code becomes easier to extend.
 
 ## Scenario mapping
 
-- Scenario 2.1 (`finder`): two Finder windows, one per screen, auto-verified after wake/login.
-- Scenario 2.2 (`app`): two application windows, one per screen, auto-verified after wake/login.
-- Scenario 2.3 (`freecad`): main window on `primary_screen`, child windows on `secondary_screen`, auto-verified after wake/login.
-- Scenario 2.4 (`kicad`): main+PCB on `primary_screen`, schematic on `secondary_screen`, auto-verified after wake/login.
-- For each scenario, the only user action during cycle execution is waking/unlocking the machine.
+- Scenario 1.1 / 1.2 (`finder`, `app` no-sleep): preserve deterministic capture/restore behavior while refactoring.
+- Scenario 1.3 / 1.4 (`freecad`, `kicad` no-sleep): preserve child-window and split-editor placement behavior while extracting common matching/movement helpers.
+- Scenario 2.1-2.4 (`cycle` wake/sleep): preserve automated full-cycle verification and report generation while cleaning orchestration and helper boundaries.
+- Cross-scenario focus: document and test the shared readiness/matching pipeline used by manual `verify` and `cycle` verify paths.
 
 ## Exit criteria
 
-- `WakeCycleScenarios` supports a single-command full-cycle mode that performs prepare, sleeps the machine, waits through wake/login, then runs verify automatically.
-- Automatic verify includes existing readiness gates (display readiness and app/window readiness) and writes a pass/fail report file for the scenario.
-- Running full-cycle mode requires no manual `verify` invocation after wake.
-- Failures are reported with actionable diagnostics (missing windows, bundle deficits, display mismatch details).
-- Existing manual `prepare`/`verify` flow remains available for debugging and does not regress.
+- `DESIGN.md`, `TESTING.md`, and `Tests/TESTS.md` accurately describe the implemented `WakeCycleScenarios` command set and execution behavior.
+- Repeated logic in `WakeCycleScenarios` is extracted into smaller helpers/types with clear responsibilities and stable interfaces.
+- Public methods have docstrings; internal methods have concise intent comments where behavior is non-obvious.
+- Unit/integration coverage is expanded for newly extracted logic (especially readiness gating and cycle-state transitions).
+- Existing baseline checks remain green and no regression is observed in manual runs for `app` and `kicad` cycle scenarios.
 
 ## Promotion rule
 
-- Promote this plan when Scenarios 2.1-2.4 pass in full-cycle automation mode with wake-only user intervention across repeated runs and reports confirm deterministic completion.
+- Promote this plan when documentation drift is eliminated, refactoring lands with passing tests, and baseline scenario behavior remains unchanged across no-sleep and wake-cycle flows.

@@ -507,14 +507,7 @@ struct WakeCycleScenarioRunner {
         print("Window 1 (\(titleOne)) -> display \(display1.id)")
         print("Window 2 (\(titleTwo)) -> display \(display2.id)")
 
-        if shouldSleep {
-            print("Sleeping machine in 3 seconds. After wake/login, run:")
-            print("  swift run WakeCycleScenarios verify \(scenario.rawValue)")
-            Thread.sleep(forTimeInterval: 3)
-            _ = runCommand("/usr/bin/pmset", ["sleepnow"])
-        } else {
-            print("Skipped sleep (--no-sleep). Manually sleep/wake, then run verify.")
-        }
+        performOptionalSleepAfterPrepare(shouldSleep: shouldSleep, scenario: scenario)
     }
 
     private func prepareFreeCADScenario(
@@ -627,14 +620,7 @@ struct WakeCycleScenarioRunner {
             )
         }
 
-        if shouldSleep {
-            print("Sleeping machine in 3 seconds. After wake/login, run:")
-            print("  swift run WakeCycleScenarios verify \(scenario.rawValue)")
-            Thread.sleep(forTimeInterval: 3)
-            _ = runCommand("/usr/bin/pmset", ["sleepnow"])
-        } else {
-            print("Skipped sleep (--no-sleep). Manually sleep/wake, then run verify.")
-        }
+        performOptionalSleepAfterPrepare(shouldSleep: shouldSleep, scenario: scenario)
     }
 
     private func prepareKiCadScenario(
@@ -758,14 +744,7 @@ struct WakeCycleScenarioRunner {
         print(
             "Schematic window (\(schematicTitleHint)) -> secondary display \(secondaryDisplay.id)")
 
-        if shouldSleep {
-            print("Sleeping machine in 3 seconds. After wake/login, run:")
-            print("  swift run WakeCycleScenarios verify \(scenario.rawValue)")
-            Thread.sleep(forTimeInterval: 3)
-            _ = runCommand("/usr/bin/pmset", ["sleepnow"])
-        } else {
-            print("Skipped sleep (--no-sleep). Manually sleep/wake, then run verify.")
-        }
+        performOptionalSleepAfterPrepare(shouldSleep: shouldSleep, scenario: scenario)
     }
 
     private func verify(
@@ -879,6 +858,17 @@ struct WakeCycleScenarioRunner {
 
         cleanupCreatedPaths(state.createdPaths)
         print("Report file: \(reportURL(for: scenario).path)")
+    }
+
+    private func performOptionalSleepAfterPrepare(shouldSleep: Bool, scenario: Scenario) {
+        guard shouldSleep else {
+            print("Skipped sleep (--no-sleep). Manually sleep/wake, then run verify.")
+            return
+        }
+        print("Sleeping machine in 3 seconds. After wake/login, run:")
+        print("  swift run WakeCycleScenarios verify \(scenario.rawValue)")
+        Thread.sleep(forTimeInterval: 3)
+        _ = runCommand("/usr/bin/pmset", ["sleepnow"])
     }
 
     private func persistCycleState(_ state: WakeCycleState, to url: URL) throws {

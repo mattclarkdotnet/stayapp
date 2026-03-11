@@ -14,6 +14,7 @@ struct RealAppScenarioTests {
     private let kicadMainBundleIDs = ["org.kicad.kicad", "org.kicad.kicad-nightly"]
     private let kicadPCBBundleIDs = ["org.kicad.pcbnew", "org.kicad.pcbnew-nightly"]
     private let kicadSchematicBundleIDs = ["org.kicad.eeschema", "org.kicad.eeschema-nightly"]
+    private let visualPauseControlEnv = "STAY_REALAPP_VISUAL_PAUSE"
 
     private enum FreeCADChildPanel: String, CaseIterable {
         case tasks = "tasks"
@@ -835,9 +836,30 @@ struct RealAppScenarioTests {
     }
 
     private func pauseForVisualConfirmation(duration: TimeInterval) {
+        guard visualConfirmationPausesEnabled(), duration > 0 else {
+            return
+        }
         let deadline = Date().addingTimeInterval(duration)
         while Date() < deadline {
             RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
+        }
+    }
+
+    private func visualConfirmationPausesEnabled() -> Bool {
+        guard
+            let raw = ProcessInfo.processInfo.environment[visualPauseControlEnv]?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased(),
+            !raw.isEmpty
+        else {
+            return true
+        }
+
+        switch raw {
+        case "0", "false", "no", "off":
+            return false
+        default:
+            return true
         }
     }
 
