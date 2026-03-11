@@ -1261,9 +1261,7 @@ struct WakeCycleScenarioRunner {
     private func waitForPID(bundleID: String, timeout: TimeInterval) -> Int32? {
         var pid: Int32?
         _ = waitUntil(timeout: timeout) {
-            if let running = NSWorkspace.shared.runningApplications.first(where: {
-                !$0.isTerminated && $0.bundleIdentifier == bundleID
-            }) {
+            if let running = runningApplication(bundleID: bundleID) {
                 pid = running.processIdentifier
                 return true
             }
