@@ -136,6 +136,7 @@ Each fixture should include expected capture output and expected restore result
 Scope:
 
 - `StayCore` state machine and retry logic (`SleepWakeCoordinator`)
+- pure snapshot-set transforms (`SnapshotSetOperations`) for per-app merge and resolved-snapshot pruning
 - event ordering and idempotency (duplicate wake, wake-before-sleep, repeated sleep)
 - persistence fallback behavior
 - readiness and restore retry interactions

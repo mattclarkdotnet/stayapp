@@ -18,6 +18,7 @@ The app is split into two layers:
 1. `StayCore` (pure logic, testable)
 - Sleep/wake state machine (`SleepWakeCoordinator`)
 - Protocols for capture/restore/scheduling/readiness/persistence
+- Pure snapshot-set transforms (`SnapshotSetOperations`) for app-level merge and resolved-snapshot pruning
 - JSON snapshot persistence
 - Models for saved window state
 

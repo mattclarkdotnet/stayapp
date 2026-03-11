@@ -1,6 +1,7 @@
 import Foundation
 import OSLog
 
+/// Environment-change signals that can unblock deferred post-wake restores.
 public enum EnvironmentChangeKind: String, Sendable {
     case unspecified
     case screensDidWake
@@ -10,6 +11,7 @@ public enum EnvironmentChangeKind: String, Sendable {
 
 // Design goal: deterministic, resilient sleep/wake handling that tolerates
 // repeated or out-of-order events and delays restore until conditions are safe.
+/// Coordinates capture on sleep and retrying restore attempts after wake.
 public final class SleepWakeCoordinator {
     private let logger = Logger(subsystem: "com.stay.app", category: "SleepWakeCoordinator")
 
@@ -46,6 +48,7 @@ public final class SleepWakeCoordinator {
     private var isWaitingForDeferredSpaceExposure = false
     private var requiresActiveSpaceChangeForDeferredRestore = false
 
+    /// Creates a coordinator with injected capture/restore and scheduling dependencies.
     public init(
         capturing: WindowSnapshotCapturing,
         restoring: WindowSnapshotRestoring,
@@ -75,11 +78,15 @@ public final class SleepWakeCoordinator {
         )
     }
 
+    /// Handles a pre-sleep event by capturing and persisting snapshots.
     public func handleWillSleep() {
         // Capture as late as possible before sleep and cancel any pending restore.
         let latestSnapshots = capturing.capture()
         let persistedSnapshots = repository.load()
-        let snapshots = mergedSnapshots(latest: latestSnapshots, fallback: persistedSnapshots)
+        let snapshots = SnapshotSetOperations.mergeLatestWithFallback(
+            latest: latestSnapshots,
+            fallback: persistedSnapshots
+        )
 
         logger.info(
             "Received willSleep; latest=\(latestSnapshots.count, privacy: .public) persisted=\(persistedSnapshots.count, privacy: .public) merged=\(snapshots.count, privacy: .public)"
@@ -101,6 +108,7 @@ public final class SleepWakeCoordinator {
         }
     }
 
+    /// Handles a wake event by scheduling post-wake restore attempts.
     public func handleDidWake() {
         lock.lock()
         guard isSleeping else {
@@ -138,6 +146,7 @@ public final class SleepWakeCoordinator {
         lock.unlock()
     }
 
+    /// Handles environment signals that may unblock deferred restore work.
     public func handleEnvironmentDidChange(_ kind: EnvironmentChangeKind = .unspecified) {
         lock.lock()
         guard !isSleeping, isAwaitingPostWakeRestore else {
@@ -246,7 +255,7 @@ public final class SleepWakeCoordinator {
 
         if !restoreResult.resolvedSnapshots.isEmpty {
             let priorPendingCount = pendingRestoreSnapshots.count
-            pendingRestoreSnapshots = removingResolvedSnapshots(
+            pendingRestoreSnapshots = SnapshotSetOperations.removeResolved(
                 from: pendingRestoreSnapshots,
                 resolved: restoreResult.resolvedSnapshots
             )
@@ -467,71 +476,4 @@ public final class SleepWakeCoordinator {
         lastIncompleteRestoreResult = nil
     }
 
-    private func removingResolvedSnapshots(
-        from pending: [WindowSnapshot],
-        resolved: [WindowSnapshot]
-    ) -> [WindowSnapshot] {
-        guard !pending.isEmpty, !resolved.isEmpty else {
-            return pending
-        }
-
-        var pendingRemovalCountBySnapshot: [WindowSnapshot: Int] = [:]
-        for snapshot in resolved {
-            pendingRemovalCountBySnapshot[snapshot, default: 0] += 1
-        }
-
-        var filtered: [WindowSnapshot] = []
-        filtered.reserveCapacity(pending.count)
-
-        for snapshot in pending {
-            let pendingRemovalCount = pendingRemovalCountBySnapshot[snapshot] ?? 0
-            if pendingRemovalCount > 0 {
-                pendingRemovalCountBySnapshot[snapshot] = pendingRemovalCount - 1
-            } else {
-                filtered.append(snapshot)
-            }
-        }
-
-        return filtered
-    }
-
-    private func mergedSnapshots(latest: [WindowSnapshot], fallback: [WindowSnapshot])
-        -> [WindowSnapshot]
-    {
-        guard !latest.isEmpty else {
-            return fallback
-        }
-
-        guard !fallback.isEmpty else {
-            return latest
-        }
-
-        let latestByApp = Dictionary(grouping: latest, by: appIdentity)
-        let fallbackByApp = Dictionary(grouping: fallback, by: appIdentity)
-
-        let allKeys = Set(latestByApp.keys).union(fallbackByApp.keys).sorted()
-        var merged: [WindowSnapshot] = []
-        merged.reserveCapacity(max(latest.count, fallback.count))
-
-        for key in allKeys {
-            let latestForApp = latestByApp[key] ?? []
-            let fallbackForApp = fallbackByApp[key] ?? []
-            // Prefer latest per-app snapshots whenever that app was seen at willSleep.
-            // Only fall back to persisted snapshots for apps missing entirely from latest.
-            if !latestForApp.isEmpty {
-                merged.append(contentsOf: latestForApp)
-            } else if !fallbackForApp.isEmpty {
-                merged.append(contentsOf: fallbackForApp)
-            }
-        }
-
-        return merged
-    }
-
-    private func appIdentity(for snapshot: WindowSnapshot) -> String {
-        if let bundleID = snapshot.appBundleID, !bundleID.isEmpty {
-            return "bundle:\(bundleID)"
-        }
-        return "pid:\(snapshot.appPID)"
-    }
 }

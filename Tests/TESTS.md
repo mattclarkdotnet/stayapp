@@ -10,6 +10,7 @@ Automated tests cover two layers:
 ## Where Tests Live
 
 - Core tests: `Tests/StayCoreTests/SleepWakeCoordinatorTests.swift`
+- Core helper tests: `Tests/StayCoreTests/SnapshotSetOperationsTests.swift`
 - Fixture round-trip tests: `Tests/StayIntegrationTests/WindowRoundTripTests.swift`
 - Real-app scenario tests: `Tests/StayIntegrationTests/RealAppScenarioTests.swift`
 

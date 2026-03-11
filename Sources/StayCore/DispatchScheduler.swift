@@ -2,13 +2,16 @@ import Dispatch
 import Foundation
 
 // Design goal: make timing behavior swappable so retries can be unit-tested.
+/// Production scheduler backed by `DispatchQueue`.
 public final class DispatchScheduler: SleepWakeScheduling {
     private let queue: DispatchQueue
 
+    /// Creates a scheduler that dispatches on `queue`.
     public init(queue: DispatchQueue = .main) {
         self.queue = queue
     }
 
+    /// Schedules `action` after `delay`.
     @discardableResult
     public func schedule(after delay: TimeInterval, _ action: @escaping () -> Void)
         -> CancellableTask
