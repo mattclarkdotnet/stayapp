@@ -1206,44 +1206,16 @@ struct WakeCycleScenarioRunner {
     private func ensureAppRunning(bundleIDs: [String], appName: String) throws -> (
         bundleID: String, pid: Int32
     ) {
-        for bundleID in bundleIDs {
-            if let running = NSWorkspace.shared.runningApplications.first(where: {
-                !$0.isTerminated && $0.bundleIdentifier == bundleID
-            }) {
-                _ = running.activate()
-                return (bundleID: bundleID, pid: running.processIdentifier)
-            }
-        }
-
-        for bundleID in bundleIDs {
-            guard runAppleScript("tell application id \"\(bundleID)\" to activate") else {
-                continue
-            }
-            if let pid = waitForPID(bundleID: bundleID, timeout: 10) {
-                return (bundleID: bundleID, pid: pid)
-            }
+        if let resolved = resolveRunningOrLaunchPID(bundleIDs: bundleIDs) {
+            return resolved
         }
 
         throw RunnerError.failed("could not launch \(appName) using bundle IDs \(bundleIDs)")
     }
 
     private func ensureAppRunning(scenario: Scenario) throws -> (bundleID: String, pid: Int32) {
-        for bundleID in scenario.candidateBundleIDs {
-            if let running = NSWorkspace.shared.runningApplications.first(where: {
-                !$0.isTerminated && $0.bundleIdentifier == bundleID
-            }) {
-                _ = running.activate()
-                return (bundleID: bundleID, pid: running.processIdentifier)
-            }
-        }
-
-        for bundleID in scenario.candidateBundleIDs {
-            guard runAppleScript("tell application id \"\(bundleID)\" to activate") else {
-                continue
-            }
-            if let pid = waitForPID(bundleID: bundleID, timeout: 10) {
-                return (bundleID: bundleID, pid: pid)
-            }
+        if let resolved = resolveRunningOrLaunchPID(bundleIDs: scenario.candidateBundleIDs) {
+            return resolved
         }
 
         throw RunnerError.failed(
@@ -1252,21 +1224,36 @@ struct WakeCycleScenarioRunner {
     }
 
     private func ensureAppRunning(bundleID: String) throws -> Int32 {
-        if let running = NSWorkspace.shared.runningApplications.first(where: {
-            !$0.isTerminated && $0.bundleIdentifier == bundleID
-        }) {
-            _ = running.activate()
-            return running.processIdentifier
-        }
-
-        guard runAppleScript("tell application id \"\(bundleID)\" to activate") else {
+        guard let resolved = resolveRunningOrLaunchPID(bundleIDs: [bundleID]) else {
             throw RunnerError.failed("could not launch app \(bundleID)")
         }
+        return resolved.pid
+    }
 
-        guard let pid = waitForPID(bundleID: bundleID, timeout: 10) else {
-            throw RunnerError.failed("app \(bundleID) did not launch in time")
+    private func resolveRunningOrLaunchPID(bundleIDs: [String]) -> (bundleID: String, pid: Int32)? {
+        for bundleID in bundleIDs {
+            if let running = runningApplication(bundleID: bundleID) {
+                _ = running.activate()
+                return (bundleID: bundleID, pid: running.processIdentifier)
+            }
         }
-        return pid
+
+        for bundleID in bundleIDs {
+            guard runAppleScript("tell application id \"\(bundleID)\" to activate") else {
+                continue
+            }
+            if let pid = waitForPID(bundleID: bundleID, timeout: 10) {
+                return (bundleID: bundleID, pid: pid)
+            }
+        }
+
+        return nil
+    }
+
+    private func runningApplication(bundleID: String) -> NSRunningApplication? {
+        NSWorkspace.shared.runningApplications.first(where: {
+            !$0.isTerminated && $0.bundleIdentifier == bundleID
+        })
     }
 
     private func waitForPID(bundleID: String, timeout: TimeInterval) -> Int32? {
