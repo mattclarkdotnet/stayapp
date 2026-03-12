@@ -24,6 +24,10 @@ protocol ReactivatedSnapshotRestoring {
     func handleReactivatedSnapshotsAvailable(_ snapshots: [WindowSnapshot])
 }
 
+protocol RestoreEnvironmentChangeHandling {
+    func handleEnvironmentDidChange(_ kind: EnvironmentChangeKind)
+}
+
 extension JSONSnapshotRepository: SnapshotStoreReading {
     func loadSnapshots() -> [WindowSnapshot] {
         load()
@@ -38,6 +42,7 @@ extension JSONSnapshotRepository: SnapshotStoreWriting {
 
 extension SleepWakeCoordinator: PendingSnapshotDisplaySuspending {}
 extension SleepWakeCoordinator: ReactivatedSnapshotRestoring {}
+extension SleepWakeCoordinator: RestoreEnvironmentChangeHandling {}
 
 // Design goal: react to awake-time display topology changes at the app boundary,
 // suspending targets for removed displays immediately and reactivating them if
@@ -50,6 +55,7 @@ final class ScreenConfigurationObserver: NSObject {
     private let snapshotWriter: any SnapshotStoreWriting
     private let pendingSnapshotInvalidator: (any PendingSnapshotDisplaySuspending)?
     private let reactivatedSnapshotRestorer: (any ReactivatedSnapshotRestoring)?
+    private let restoreEnvironmentChangeHandler: (any RestoreEnvironmentChangeHandling)?
     private let displayInventory: any DisplayInventoryReading
     private let notificationName: Notification.Name
     private var previousActiveDisplayIDs: Set<UInt32>
@@ -60,6 +66,7 @@ final class ScreenConfigurationObserver: NSObject {
         snapshotWriter: any SnapshotStoreWriting,
         pendingSnapshotInvalidator: (any PendingSnapshotDisplaySuspending)? = nil,
         reactivatedSnapshotRestorer: (any ReactivatedSnapshotRestoring)? = nil,
+        restoreEnvironmentChangeHandler: (any RestoreEnvironmentChangeHandling)? = nil,
         displayInventory: any DisplayInventoryReading,
         center: NotificationCenter = .default,
         notificationName: Notification.Name = NSApplication.didChangeScreenParametersNotification
@@ -69,6 +76,7 @@ final class ScreenConfigurationObserver: NSObject {
         self.snapshotWriter = snapshotWriter
         self.pendingSnapshotInvalidator = pendingSnapshotInvalidator
         self.reactivatedSnapshotRestorer = reactivatedSnapshotRestorer
+        self.restoreEnvironmentChangeHandler = restoreEnvironmentChangeHandler
         self.displayInventory = displayInventory
         self.notificationName = notificationName
         self.previousActiveDisplayIDs = displayInventory.currentDisplayIDs()
@@ -103,6 +111,7 @@ final class ScreenConfigurationObserver: NSObject {
         }
 
         previousActiveDisplayIDs = activeDisplayIDs
+        restoreEnvironmentChangeHandler?.handleEnvironmentDidChange(.unspecified)
 
         logger.info(
             "Observed screen-parameter change; activeDisplays=\(activeDisplayIDs.count, privacy: .public) suspendedPersistedSnapshots=\(suspendedPersistedSnapshots, privacy: .public) invalidatedPendingSnapshots=\(invalidatedPendingCount, privacy: .public) reactivatedPersistedSnapshots=\(reactivatedSnapshots.count, privacy: .public)"

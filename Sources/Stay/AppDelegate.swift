@@ -67,6 +67,7 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
             snapshotWriter: repository,
             pendingSnapshotInvalidator: coordinator,
             reactivatedSnapshotRestorer: coordinator,
+            restoreEnvironmentChangeHandler: coordinator,
             displayInventory: screenService
         )
 

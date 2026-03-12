@@ -83,6 +83,9 @@ Why: capture as late as possible before sleep and keep a durable fallback.
 - Each attempt runs readiness checks; if not ready, it retries after a short interval.
 - Once ready (or timed out), restore is attempted and returns structured progress
   (`moved`, `already aligned`, `recoverable failures`, `deferred snapshots`).
+- If a saved display is still unavailable when restore runs after wake timeout,
+  Stay leaves those snapshots unresolved instead of clamping them onto a different
+  currently active display.
 - Restore attempts now also return which snapshots were actually resolved; coordinator
   removes those from the pending set so later retries only target unresolved windows.
 - Restore attempts now also report snapshots deferred specifically due to inactive
@@ -108,7 +111,8 @@ Why: capture as late as possible before sleep and keep a durable fallback.
   across sleep/wake; Stay tracks active-vs-inactive visibility during restore rather
   than attempting cross-workspace identity migration.
 
-Why: OS wake is often earlier than external monitor wake.
+Why: OS wake is often earlier than external monitor wake, so a temporarily missing
+display must not be treated as permission to restore onto the wrong screen.
 
 ### 4. On user-triggered restore
 

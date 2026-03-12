@@ -17,6 +17,7 @@ struct ScreenConfigurationObserverTests {
         ])
         let pendingInvalidator = SpyPendingSnapshotDisplayInvalidator()
         let reactivatedRestorer = SpyReactivatedSnapshotRestorer()
+        let environmentChangeHandler = SpyRestoreEnvironmentChangeHandler()
         let displayInventory = MutableDisplayInventory(displayIDs: [1, 2])
         let notificationName = Notification.Name("ScreenConfigurationObserverTests.didChange")
 
@@ -25,6 +26,7 @@ struct ScreenConfigurationObserverTests {
             snapshotWriter: repository,
             pendingSnapshotInvalidator: pendingInvalidator,
             reactivatedSnapshotRestorer: reactivatedRestorer,
+            restoreEnvironmentChangeHandler: environmentChangeHandler,
             displayInventory: displayInventory,
             center: center,
             notificationName: notificationName
@@ -36,6 +38,7 @@ struct ScreenConfigurationObserverTests {
         #expect(repository.savedSnapshots.map(\.windowTitle) == ["Primary"])
         #expect(pendingInvalidator.invalidatedDisplaySets == [[1]])
         #expect(reactivatedRestorer.calls.isEmpty)
+        #expect(environmentChangeHandler.calls == [.unspecified])
 
         displayInventory.displayIDs = [1, 2]
         center.post(name: notificationName, object: nil)
@@ -45,6 +48,7 @@ struct ScreenConfigurationObserverTests {
         #expect(pendingInvalidator.invalidatedDisplaySets == [[1], [1, 2]])
         #expect(reactivatedRestorer.calls.count == 1)
         #expect(reactivatedRestorer.calls[0].map(\.windowTitle) == ["Secondary"])
+        #expect(environmentChangeHandler.calls == [.unspecified, .unspecified])
     }
 }
 
@@ -78,6 +82,14 @@ private final class SpyReactivatedSnapshotRestorer: ReactivatedSnapshotRestoring
 
     func handleReactivatedSnapshotsAvailable(_ snapshots: [WindowSnapshot]) {
         calls.append(snapshots)
+    }
+}
+
+private final class SpyRestoreEnvironmentChangeHandler: RestoreEnvironmentChangeHandling {
+    var calls: [EnvironmentChangeKind] = []
+
+    func handleEnvironmentDidChange(_ kind: EnvironmentChangeKind) {
+        calls.append(kind)
     }
 }
 

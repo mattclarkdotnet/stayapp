@@ -7,6 +7,7 @@ import Foundation
 protocol ScreenCoordinateServicing {
     func displayID(for frame: CGRect) -> UInt32?
     func adjustedFrame(_ frame: CGRect, preferredDisplayID: UInt32?) -> CGRect
+    func currentDisplayIDs() -> Set<UInt32>
 }
 
 final class NSScreenCoordinateService: ScreenCoordinateServicing, DisplayInventoryReading {

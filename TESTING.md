@@ -118,6 +118,7 @@ Each fixture should include expected capture output and expected restore result
 
 - No stale persisted window may block restoring fresh captured windows for the same app.
 - Available windows must still restore when some app windows are deferred.
+- Missing saved displays after wake must defer those windows instead of remapping them onto an available display.
 - Re-running restore on an already-restored layout must be a no-op (no extra moves).
 - Deferred-only residuals must park without interval loops and retry on environment change.
 - Inactive-workspace deferred snapshots must remain pending across both wake-triggered
@@ -171,6 +172,7 @@ Scope:
 - launch-time separate-spaces suspension policy
 - awake-time screen-configuration observer wiring
 - awake-time same-display disconnect/reconnect restore behavior
+- post-wake restore deferring windows whose saved display is still unavailable
 - real-app capture/restore scenarios without sleep (from `Tests/SCENARIOS.md`)
 - end-to-end app process startup
 - logging and diagnostics behavior
@@ -181,6 +183,7 @@ How:
 
 - run `swift test --filter SeparateSpacesPolicyTests`
 - run `swift test --filter 'JSONSnapshotRepositoryTests|ScreenConfigurationObserverTests'`
+- run `swift test --filter AXWindowSnapshotServiceTests`
 - for guided awake-time hardware QA, run `swift run WakeCycleScenarios awake-display finder|app`
 - run `swift test --filter StayIntegrationTests.RealAppScenarioTests`
 - tests launch real apps (Finder/TextEdit/FreeCAD/KiCad), move real windows across screens,
@@ -235,6 +238,7 @@ Recommended matrix:
 Acceptance criteria:
 
 - windows that were on secondary displays before sleep return to those displays after wake
+- if a saved secondary display is still missing after wake, Stay does not remap its windows onto a different display just to complete restore
 - no persistent restore loop after success
 - when `Displays have separate Spaces` is enabled, Stay reports that it is paused and does not attempt capture/restore
 - logs show sensible retries and eventual success or timeout behavior

@@ -274,6 +274,31 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         return "pid:\(pid)"
     }
 
+    // Design goal: after wake, a missing target display should stay deferred
+    // rather than being remapped onto a different currently available display.
+    static func partitionSnapshotsByAvailableDisplays(
+        _ snapshots: [WindowSnapshot],
+        activeDisplayIDs: Set<UInt32>
+    ) -> (eligible: [WindowSnapshot], unavailable: [WindowSnapshot]) {
+        var eligible: [WindowSnapshot] = []
+        var unavailable: [WindowSnapshot] = []
+
+        for snapshot in snapshots {
+            guard let screenDisplayID = snapshot.screenDisplayID else {
+                eligible.append(snapshot)
+                continue
+            }
+
+            if activeDisplayIDs.contains(screenDisplayID) {
+                eligible.append(snapshot)
+            } else {
+                unavailable.append(snapshot)
+            }
+        }
+
+        return (eligible, unavailable)
+    }
+
     func restore(from snapshots: [WindowSnapshot]) -> WindowRestoreResult {
         guard AccessibilityPermission.isTrusted(prompt: false), !snapshots.isEmpty else {
             logger.warning(
@@ -287,6 +312,11 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
             )
         }
 
+        let displayPartition = Self.partitionSnapshotsByAvailableDisplays(
+            snapshots,
+            activeDisplayIDs: screenService.currentDisplayIDs()
+        )
+
         // Restore pipeline per invocation:
         // 1) partition snapshots per app and per active space,
         // 2) opportunistically expose AX windows (activation where safe),
@@ -294,15 +324,15 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         // 4) apply frame writes with app-specific convergence checks,
         // 5) return structured progress so coordinator can decide retry/park.
         // Group by process to avoid cross-app window matching.
-        let grouped = groupedSnapshotsByTargetPID(snapshots)
+        let grouped = groupedSnapshotsByTargetPID(displayPartition.eligible)
         let onScreenWindowNumbersByPID = onScreenWindowNumbersByPID()
         // Coordinator treats this as a success signal for ending post-wake retries.
         var movedWindowCount = 0
         var alreadyAlignedCount = 0
-        var recoverableFailureCount = 0
+        var recoverableFailureCount = displayPartition.unavailable.count
         // "Deferred" snapshots are windows we intentionally skip this attempt
         // because AX has not exposed enough windows for a safe restore yet.
-        var deferredSnapshotCount = 0
+        var deferredSnapshotCount = displayPartition.unavailable.count
         // Workspace-specific deferrals are tracked explicitly so coordinator
         // can wait for active-space changes without conflating app-readiness delays.
         var deferredInactiveWorkspaceSnapshots: [WindowSnapshot] = []
@@ -310,6 +340,12 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         logger.info(
             "Starting restore for \(snapshots.count, privacy: .public) snapshot(s) across \(grouped.count, privacy: .public) app(s)"
         )
+        if !displayPartition.unavailable.isEmpty {
+            let deferredDisplayIDs = Set(displayPartition.unavailable.compactMap(\.screenDisplayID))
+            logger.info(
+                "Deferring \(displayPartition.unavailable.count, privacy: .public) snapshot(s) because target displays are unavailable: \(deferredDisplayIDs.sorted().map(String.init).joined(separator: ","), privacy: .public)"
+            )
+        }
         let originalFrontmostPID = workspace.frontmostApplication?.processIdentifier
         var activatedPIDsForWindowExposure = Set<Int32>()
 

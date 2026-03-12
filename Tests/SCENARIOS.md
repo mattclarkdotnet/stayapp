@@ -160,3 +160,14 @@ And the user logs in
 Then the main KiCad window should be restored on `primary_screen`
 And the PCB editor window should be restored on `primary_screen`
 And the schematic editor window should be restored on `secondary_screen`
+
+### Scenario 2.5: Secondary display missing immediately after wake
+Given that the user has two external screens (`primary_screen` and `secondary_screen`)
+Given that the user's computer has no internal screen
+Given that there is one restorable window on each screen before sleep
+When the user sleeps the computer
+And `secondary_screen` is still unavailable when the user wakes and logs in
+Then Stay should not crash
+And Stay should not move the `secondary_screen` window onto `primary_screen` just because `secondary_screen` is missing
+When `secondary_screen` later becomes available again during the same wake session
+Then Stay may retry restore for the still-pending window without having corrupted its saved target
