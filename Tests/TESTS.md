@@ -14,6 +14,7 @@ Automated tests cover two layers:
 - Persistence invalidation tests: `Tests/StayCoreTests/JSONSnapshotRepositoryTests.swift`
 - Wake-cycle core tests: `Tests/WakeCycleScenariosCoreTests/*`
 - Wake-cycle core coverage includes invocation parsing, scenario metadata, cycle-state codecs, scenario-state/report codecs, and malformed decode paths
+- Bundle metadata tests: `Tests/StayIntegrationTests/BundleMetadataTests.swift`
 - Fixture round-trip tests: `Tests/StayIntegrationTests/WindowRoundTripTests.swift`
 - Restore availability tests: `Tests/StayIntegrationTests/AXWindowSnapshotServiceTests.swift`
 - Separate-spaces policy tests: `Tests/StayIntegrationTests/SeparateSpacesPolicyTests.swift`
@@ -56,6 +57,12 @@ To run the missing-display restore safety coverage:
 
 ```bash
 swift test --filter AXWindowSnapshotServiceTests
+```
+
+To run the bundle metadata coverage:
+
+```bash
+swift test --filter BundleMetadataTests
 ```
 
 To run the guided real-hardware awake-time display-disconnect/reconnect check:
@@ -183,6 +190,7 @@ Scenarios currently automated from `SCENARIOS.md`:
 - awake-time display disconnect invalidating stale queued restore targets before they run
 - awake-time same-display reconnect restoring windows back to the reconnected display
 - post-wake missing-display snapshots staying deferred instead of being remapped to an available screen
+- checked-in app-bundle metadata remaining aligned with the intended `Stay.app` identity
 - one TextEdit window on a secondary workspace, restored when that workspace becomes active
 - one full-screen TextEdit window ignored while Finder windows are restored normally
 - FreeCAD main window + child windows (tasks/model/report/python console) across two screens

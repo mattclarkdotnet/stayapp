@@ -1,31 +1,31 @@
-# Plan: Bundling And Installability
+# Plan: Start On Login As Early As macOS Allows
 
 ## Roadmap alignment
 
-- This plan implements `ROADMAP.md` `Now` by turning Stay into a normal installable macOS app bundle before login-item and distribution work build on top of it.
+- This plan implements `ROADMAP.md` `Now` by building login-item support on top of the newly installed `Stay.app` bundle identity.
 
 ## Objective
 
-- Land the smallest useful bundling/installability slice that lets Stay be built, installed, and launched as a recognizable app bundle without changing its validated restore behavior.
+- Launch Stay automatically as early as macOS allows after login, without introducing duplicate launches or destabilizing the existing restore behavior.
 
 ## Assumptions
 
-- Bundling/installability comes before login-item work so startup registration can target a stable app bundle identity.
-- The first slice does not need to solve signing, notarization, TestFlight, or App Store submission yet.
-- App icon and bundle metadata are in scope here if they are necessary to make the bundle installable and understandable in Finder/System Settings.
+- Login-item registration should target the installed app bundle rather than a SwiftPM build artifact.
+- "As early as macOS allows" means using the supported login-item mechanism correctly, not trying to out-race every other app with unsupported startup hacks.
+- Distribution concerns remain out of scope for this plan unless they block local login-item verification.
 
 ## Scenario mapping
 
-- Stay can be built into a normal app bundle and launched from that bundle while preserving its current menu-bar-only behavior.
-- Stay can be installed into a conventional location and relaunched later without depending on the transient SwiftPM build path.
-- The bundled app has enough metadata and assets that macOS surfaces it as a coherent app rather than an anonymous development artifact.
+- The user installs `Stay.app`, enables launch at login, logs out, and logs back in; Stay starts automatically without manual relaunch.
+- Login-item registration remains stable across repeated app launches and does not create duplicate Stay processes.
+- The login-item path preserves the existing menu-bar-only behavior and still respects the separate-spaces suspension policy at launch.
 
 ## Exit criteria
 
-- Stay runs correctly from an installable app bundle.
-- The bundling approach is documented clearly enough for the later login-item and distribution roadmap items to build on it.
-- Existing focused restore verification remains green after the bundling changes.
+- Stay can be enabled for automatic login launch from the installed app bundle and starts reliably after login.
+- The chosen login-item behavior is documented clearly enough for the later distribution roadmap item to build on it.
+- Existing focused restore verification remains green after the login-item changes.
 
 ## Promotion rule
 
-- Promote this plan only after the bundle/install flow works end-to-end; if signing or distribution concerns start to dominate, defer them and move on to the separate login-item roadmap item.
+- Promote this plan only after login launch works end-to-end from the installed bundle; if App Store/TestFlight constraints become the main blocker, record them and move on to the separate distribution roadmap item.

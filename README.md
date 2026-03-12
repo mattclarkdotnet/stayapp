@@ -9,6 +9,7 @@ Stay is a lightweight macOS utility that records app window layouts before sleep
 - Persists snapshots to `~/Library/Application Support/Stay/window-layout.json`
 - Restores windows after wake only after required displays are online and awake (with timeout fallback)
 - Includes unit tests for repeated/out-of-order sleep and wake events
+- Includes integration tests for sleep/wake restore flows
 
 ## Requirements
 
@@ -19,6 +20,28 @@ Stay is a lightweight macOS utility that records app window layouts before sleep
 
 ```bash
 swift run Stay
+```
+
+## Build A Bundle
+
+```bash
+./Scripts/build-stay-app.sh
+```
+
+This stages a launchable `Stay.app` bundle at `dist/Stay.app`.
+
+## Install
+
+```bash
+./Scripts/install-stay-app.sh
+```
+
+By default this installs `Stay.app` into `~/Applications`.
+
+Launch it normally with:
+
+```bash
+open ~/Applications/Stay.app
 ```
 
 ## Test

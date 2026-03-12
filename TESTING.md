@@ -173,6 +173,7 @@ Scope:
 - awake-time screen-configuration observer wiring
 - awake-time same-display disconnect/reconnect restore behavior
 - post-wake restore deferring windows whose saved display is still unavailable
+- bundle metadata and bundle staging/install scripts
 - real-app capture/restore scenarios without sleep (from `Tests/SCENARIOS.md`)
 - end-to-end app process startup
 - logging and diagnostics behavior
@@ -184,8 +185,10 @@ How:
 - run `swift test --filter SeparateSpacesPolicyTests`
 - run `swift test --filter 'JSONSnapshotRepositoryTests|ScreenConfigurationObserverTests'`
 - run `swift test --filter AXWindowSnapshotServiceTests`
+- run `swift test --filter BundleMetadataTests`
 - for guided awake-time hardware QA, run `swift run WakeCycleScenarios awake-display finder|app`
 - run `swift test --filter StayIntegrationTests.RealAppScenarioTests`
+- run `./Scripts/build-stay-app.sh` to verify the bundle can be staged successfully
 - tests launch real apps (Finder/TextEdit/FreeCAD/KiCad), move real windows across screens,
   and for the workspace scenario switch real Mission Control spaces before running capture/restore
 - the full-screen scenario uses a real TextEdit full-screen window and verifies capture keeps it
@@ -241,6 +244,7 @@ Acceptance criteria:
 - if a saved secondary display is still missing after wake, Stay does not remap its windows onto a different display just to complete restore
 - no persistent restore loop after success
 - when `Displays have separate Spaces` is enabled, Stay reports that it is paused and does not attempt capture/restore
+- `dist/Stay.app` can be built and installed with the checked-in scripts
 - logs show sensible retries and eventual success or timeout behavior
 
 ## Diagnostics-Driven Testing

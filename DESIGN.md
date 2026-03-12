@@ -31,8 +31,25 @@ The app is split into two layers:
 - awake-time screen-configuration observer for snapshot suspension and same-display reconnect restore
 - Accessibility-based window capture/restore service
 - Display mapping and display readiness checks
+- checked-in app bundle metadata plus scripts that stage an installable `Stay.app`
 
 This separation keeps OS-specific behavior out of core logic and allows deterministic unit tests.
+
+## Bundling And Installability
+
+- The repository now carries a checked-in `AppBundle/Info.plist` that defines the
+  app bundle identity (`com.stay.app`), accessory-app behavior (`LSUIElement`),
+  minimum macOS version, and executable name.
+- `Scripts/build-stay-app.sh` builds the release executable and stages a
+  launchable `dist/Stay.app` bundle with the expected `Contents` layout.
+- `Scripts/install-stay-app.sh` copies that staged bundle into `~/Applications`
+  by default so Stay can be launched as a normal installed app rather than only
+  from a transient SwiftPM build path.
+- The bundle/install scripts intentionally stop short of login-item registration
+  and App Store/TestFlight distribution; those remain separate roadmap items.
+
+Why: later productization work needs a stable macOS app bundle identity first,
+so installability comes before login-item and distribution plumbing.
 
 ## Runtime Flow
 

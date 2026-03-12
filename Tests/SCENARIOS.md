@@ -108,6 +108,13 @@ And the same `secondary_screen` is reconnected while Stay is still running
 Then Stay should reactivate the suspended snapshot entries for `secondary_screen`
 And Stay should restore the affected windows back to `secondary_screen`
 
+### Scenario 1.10: Stay can be installed as an app bundle
+Given that the developer has built `Stay.app` with the checked-in bundle script
+When the developer installs the bundled app into `~/Applications`
+And launches Stay from that installed app bundle
+Then Stay should enter the same menu-bar-only flow as the development executable
+And Stay should not depend on the transient SwiftPM build path to be launchable
+
 ## 2. Scenarios with a full sleep/wake cycle:
 ### Scenario 2.1: 2 finder windows
 Given that the user has two external screens (`screen_1` and `screen_2`)
