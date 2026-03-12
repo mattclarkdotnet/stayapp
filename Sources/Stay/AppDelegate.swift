@@ -8,12 +8,27 @@ import StayCore
 @MainActor
 final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
     private let logger = Logger(subsystem: "com.stay.app", category: "AppDelegate")
+    private let separateSpacesPolicy: SeparateSpacesSuspensionPolicy
+    private let notifier: any StayUserNotifying
     private var statusItem: NSStatusItem?
     private var coordinator: SleepWakeCoordinator?
     private var sleepWakeObserver: SleepWakeObserver?
     private var snapshotService: AXWindowSnapshotService?
     private var repository: JSONSnapshotRepository?
     private var statusLine = "Starting"
+    private var isPausedForSeparateSpaces = false
+    private var hasSentSeparateSpacesNotification = false
+
+    init(
+        separateSpacesPreferenceReader: any SeparateSpacesPreferenceReading =
+            MacOSSeparateSpacesPreferenceReader(),
+        notifier: any StayUserNotifying = StayUserNotificationCenter()
+    ) {
+        self.separateSpacesPolicy = SeparateSpacesSuspensionPolicy(
+            preferenceReader: separateSpacesPreferenceReader)
+        self.notifier = notifier
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         logger.info("Application did finish launching")
@@ -22,6 +37,10 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startServices() {
+        if applySeparateSpacesPolicyIfNeeded() {
+            return
+        }
+
         let snapshotService = AXWindowSnapshotService(screenService: NSScreenCoordinateService())
         let repository = JSONSnapshotRepository(url: JSONSnapshotRepository.defaultURL())
 
@@ -51,6 +70,24 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func applySeparateSpacesPolicyIfNeeded() -> Bool {
+        guard separateSpacesPolicy.shouldSuspendStay() else {
+            isPausedForSeparateSpaces = false
+            return false
+        }
+
+        isPausedForSeparateSpaces = true
+        logger.info("Separate Spaces is enabled; standing down")
+        updateStatus(SeparateSpacesSuspensionPolicy.suspendedStatusLine)
+
+        if !hasSentSeparateSpacesNotification {
+            notifier.notifySeparateSpacesSuspended()
+            hasSentSeparateSpacesNotification = true
+        }
+
+        return true
+    }
+
     private func configureStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "Stay"
@@ -66,12 +103,20 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(status)
 
         menu.addItem(.separator())
-        menu.addItem(
-            makeMenuItem(title: "Capture Layout Now", action: #selector(captureLayoutNow), key: "c")
+        let captureItem = makeMenuItem(
+            title: "Capture Layout Now",
+            action: #selector(captureLayoutNow),
+            key: "c"
         )
-        menu.addItem(
-            makeMenuItem(title: "Restore Layout Now", action: #selector(restoreLayoutNow), key: "r")
+        captureItem.isEnabled = !isPausedForSeparateSpaces
+        menu.addItem(captureItem)
+        let restoreItem = makeMenuItem(
+            title: "Restore Layout Now",
+            action: #selector(restoreLayoutNow),
+            key: "r"
         )
+        restoreItem.isEnabled = !isPausedForSeparateSpaces
+        menu.addItem(restoreItem)
         menu.addItem(.separator())
         menu.addItem(makeMenuItem(title: "Quit Stay", action: #selector(quit), key: "q"))
 
@@ -90,6 +135,11 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func captureLayoutNow() {
+        guard !isPausedForSeparateSpaces else {
+            updateStatus(SeparateSpacesSuspensionPolicy.suspendedStatusLine)
+            return
+        }
+
         guard let snapshotService, let repository else {
             updateStatus("Service unavailable")
             return
@@ -113,6 +163,11 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func restoreLayoutNow() {
+        guard !isPausedForSeparateSpaces else {
+            updateStatus(SeparateSpacesSuspensionPolicy.suspendedStatusLine)
+            return
+        }
+
         guard let coordinator, let repository else {
             updateStatus("Service unavailable")
             return

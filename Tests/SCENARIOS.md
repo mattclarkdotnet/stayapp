@@ -83,6 +83,13 @@ Then the Finder windows should be restored to their saved screens
 And the full-screen TextEdit window should not be included in the restorable snapshot set
 And Stay should leave the full-screen TextEdit app under macOS full-screen placement control
 
+### Scenario 1.7: Separate spaces setting pauses Stay
+Given that macOS `Displays have separate Spaces` is enabled
+When Stay launches
+Then Stay should not capture or restore window layouts
+And Stay should disable manual capture and restore actions
+And Stay should notify the user that macOS is preserving placement until the setting changes again
+
 ## 2. Scenarios with a full sleep/wake cycle:
 ### Scenario 2.1: 2 finder windows
 Given that the user has two external screens (`screen_1` and `screen_2`)

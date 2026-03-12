@@ -3,6 +3,8 @@
 ## Purpose
 
 Stay is a lightweight macOS utility that restores app windows to their pre-sleep displays after wake.
+When macOS `Displays have separate Spaces` is enabled, Stay intentionally stands down and
+leaves window placement entirely under macOS control.
 
 The design prioritizes:
 
@@ -24,6 +26,7 @@ The app is split into two layers:
 
 2. `Stay` (macOS integration)
 - App lifecycle and menu bar UI (`StayApplicationDelegate`)
+- launch-time separate-spaces policy gate and user notification
 - macOS sleep/wake notification observer
 - Accessibility-based window capture/restore service
 - Display mapping and display readiness checks
@@ -35,12 +38,23 @@ This separation keeps OS-specific behavior out of core logic and allows determin
 ### 1. Launch
 
 - `main.swift` starts an accessory app (menu bar utility, no dock window).
-- `StayApplicationDelegate` wires services:
+- `StayApplicationDelegate` first reads `com.apple.spaces` `spans-displays`.
+- If `Displays have separate Spaces` is enabled, Stay:
+  - does not start sleep/wake capture or restore services
+  - disables manual capture/restore menu actions
+  - sends a best-effort notification explaining that macOS is already preserving placement
+- Otherwise `StayApplicationDelegate` wires services:
   - `AXWindowSnapshotService` for capture/restore
   - `JSONSnapshotRepository` for persistence
   - `DisplayWakeReadinessChecker` for display wake gating
   - `SleepWakeCoordinator` for orchestration
   - `SleepWakeObserver` for `willSleep`/`didWake` notifications
+
+Why: when each display has its own space, macOS already preserves placement well enough
+that Stay's intervention is more likely to interfere than help.
+The setting also requires a full logout/login cycle before the live Space topology updates,
+so Stay does not need to monitor it dynamically after launch; the app will be relaunched
+under the newly applied setting.
 
 ### 2. On `willSleep`
 
@@ -106,6 +120,19 @@ Why: OS wake is often earlier than external monitor wake.
 
 Why: direct restore should behave like wake restore for deferred windows instead of
 discarding pending workspace state after a single AX pass.
+
+### 5. While separate spaces is enabled
+
+- Stay does not create a `SleepWakeCoordinator` or `SleepWakeObserver`, so it does not
+  capture on sleep or restore on wake.
+- Manual menu actions remain visible for discoverability but are disabled.
+- Notification delivery is best-effort: if the user has denied notification permission,
+  the menu-bar status line still explains that Stay is paused.
+- Stay does not watch for runtime changes to `spans-displays`; macOS applies that toggle
+  on the next logout/login cycle, so a fresh Stay launch picks up the correct mode.
+
+Why: the safest behavior for this macOS mode is to stay out of the way while still
+making the paused state explicit.
 
 ## Display Readiness Logic
 

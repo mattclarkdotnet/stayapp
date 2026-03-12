@@ -14,6 +14,7 @@ Automated tests cover two layers:
 - Wake-cycle core tests: `Tests/WakeCycleScenariosCoreTests/*`
 - Wake-cycle core coverage includes invocation parsing, scenario metadata, cycle-state codecs, scenario-state/report codecs, and malformed decode paths
 - Fixture round-trip tests: `Tests/StayIntegrationTests/WindowRoundTripTests.swift`
+- Separate-spaces policy tests: `Tests/StayIntegrationTests/SeparateSpacesPolicyTests.swift`
 - Real-app scenario tests: `Tests/StayIntegrationTests/RealAppScenarioTests.swift`
 
 ## How to Run
@@ -34,6 +35,12 @@ To run only the real-app scenarios:
 swift test --filter StayIntegrationTests.RealAppScenarioTests
 # disable visual confirmation delays (optional)
 STAY_REALAPP_VISUAL_PAUSE=0 swift test --filter StayIntegrationTests.RealAppScenarioTests
+```
+
+To run only the separate-spaces suspension coverage:
+
+```bash
+swift test --filter SeparateSpacesPolicyTests
 ```
 
 Wake-cycle scenarios (with real sleep/wake) use the runner executable:
@@ -90,6 +97,8 @@ swift run WakeCycleScenarios verify kicad --check-only
 - Exactly two external displays must be active (no built-in display).
 - In scenario tests, `screen 1` means the primary macOS display (menu bar display).
 - Accessibility permission for Stay/test process must be granted.
+- `Displays have separate Spaces` must be OFF for real-app capture/restore scenarios;
+  if it is ON, Stay intentionally pauses itself instead of moving windows.
 - Finder, TextEdit, FreeCAD, and KiCad must be launchable.
 - FreeCAD child windows used in Scenario 1.3 must be visible as independent AX windows.
 - FreeCAD Scenario 1.3 includes one app relaunch retry if the expected child windows are not exposed on first activation.
@@ -140,6 +149,7 @@ Scenarios currently automated from `SCENARIOS.md`:
 
 - two Finder windows, one per screen
 - two non-Finder app windows (TextEdit), one per screen
+- launch-time pause mode when `Displays have separate Spaces` is enabled
 - one TextEdit window on a secondary workspace, restored when that workspace becomes active
 - one full-screen TextEdit window ignored while Finder windows are restored normally
 - FreeCAD main window + child windows (tasks/model/report/python console) across two screens
@@ -184,6 +194,7 @@ Add/expand tests for:
 - inactive-workspace-specific deferrals (`deferredInactiveWorkspaceSnapshots`) only
   retrying after `activeSpaceDidChange`
 - full-screen windows being excluded from capture/fallback so restore does not target them
+- separate-spaces launch gating pausing Stay and disabling manual capture/restore
 - untitled multi-window matching using enriched identity (`windowNumber`, role/subrole)
 - Finder-specific capture/restore quirks (Desktop pseudo-window filtering, display-first restore semantics)
 

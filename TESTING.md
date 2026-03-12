@@ -166,6 +166,7 @@ Gate:
 
 Scope:
 
+- launch-time separate-spaces suspension policy
 - real-app capture/restore scenarios without sleep (from `Tests/SCENARIOS.md`)
 - end-to-end app process startup
 - logging and diagnostics behavior
@@ -174,6 +175,7 @@ Scope:
 
 How:
 
+- run `swift test --filter SeparateSpacesPolicyTests`
 - run `swift test --filter StayIntegrationTests.RealAppScenarioTests`
 - tests launch real apps (Finder/TextEdit/FreeCAD/KiCad), move real windows across screens,
   and for the workspace scenario switch real Mission Control spaces before running capture/restore
@@ -196,6 +198,8 @@ How:
 Limitations:
 
 - requires a real two-external-display setup and Accessibility permission
+- real-app capture/restore scenarios assume `Displays have separate Spaces` is OFF;
+  when it is ON, Stay intentionally pauses itself instead of managing placement
 - Scenario 1.5 additionally requires two adjacent Mission Control workspaces and working
   `control-left` / `control-right` space-switch shortcuts
 - FreeCAD Scenario 1.3 also requires visible child/tool windows as independent AX windows
@@ -221,6 +225,7 @@ Acceptance criteria:
 
 - windows that were on secondary displays before sleep return to those displays after wake
 - no persistent restore loop after success
+- when `Displays have separate Spaces` is enabled, Stay reports that it is paused and does not attempt capture/restore
 - logs show sensible retries and eventual success or timeout behavior
 
 ## Diagnostics-Driven Testing
