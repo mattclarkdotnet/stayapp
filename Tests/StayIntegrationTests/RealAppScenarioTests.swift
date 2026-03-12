@@ -82,6 +82,11 @@ struct RealAppScenarioTests {
         runTextEditSecondaryWorkspaceScenario()
     }
 
+    @Test("Scenario 6: full-screen app is ignored during capture/restore")
+    func fullScreenAppIsIgnoredScenario() {
+        runFullScreenAppIgnoredScenario()
+    }
+
     private func runTwoWindowScenario(
         bundleID: String,
         quitAppAfterScenario: Bool = false,
@@ -436,6 +441,259 @@ struct RealAppScenarioTests {
         guard restoredOnSecondaryWorkspace else {
             return
         }
+
+        pauseForVisualConfirmation(duration: 2.0)
+    }
+
+    private func runFullScreenAppIgnoredScenario() {
+        let hasAXPermission = AXIsProcessTrusted()
+        #expect(hasAXPermission)
+        guard hasAXPermission else {
+            return
+        }
+
+        guard let displays = validatedTwoExternalDisplays() else {
+            return
+        }
+        let primaryScreen = displays[0].screen
+        let secondaryScreen = displays[1].screen
+        let primaryDisplayID = displays[0].id
+        let secondaryDisplayID = displays[1].id
+        let finderBundleID = "com.apple.finder"
+        let textEditBundleID = "com.apple.TextEdit"
+
+        resetScriptedScenarioAppState(bundleIDs: [finderBundleID, textEditBundleID])
+
+        let textEditActivated = runAppleScript(
+            "tell application id \"\(textEditBundleID)\" to activate")
+        #expect(textEditActivated)
+        guard textEditActivated else {
+            return
+        }
+
+        let textEditReady = waitUntil(timeout: 8.0) {
+            self.runningAppPID(bundleID: textEditBundleID) != nil
+        }
+        #expect(textEditReady)
+        guard textEditReady, let textEditPID = runningAppPID(bundleID: textEditBundleID) else {
+            return
+        }
+
+        let existingTextEditWindows = liveWindows(pid: textEditPID)
+        let runID = String(UUID().uuidString.prefix(8)).lowercased()
+        let fileURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("stay-fullscreen-\(runID).txt")
+        try? "Full-screen ignore scenario\n".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        defer {
+            quitApp(bundleID: textEditBundleID, pid: textEditPID)
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+
+        let createTextEditWindow = runAppleScript(
+            """
+            tell application id "\(textEditBundleID)"
+                activate
+                open POSIX file "\(escapedAppleScriptString(fileURL.path))"
+            end tell
+            """
+        )
+        #expect(createTextEditWindow)
+        guard createTextEditWindow else {
+            return
+        }
+
+        let titleHint = fileURL.lastPathComponent.lowercased()
+        let textEditWindowReady = waitUntil(timeout: 8.0) {
+            self.newlyDiscoveredWindows(pid: textEditPID, excluding: existingTextEditWindows)
+                .contains(where: { ($0.title ?? "").lowercased().contains(titleHint) })
+        }
+        #expect(textEditWindowReady)
+        guard textEditWindowReady,
+            let textEditWindow = findWindow(pid: textEditPID, titleHint: titleHint)
+        else {
+            return
+        }
+        pauseForVisualConfirmation(duration: 1.0)
+
+        let secondaryPlaced = setWindowFrame(
+            element: textEditWindow.element,
+            frame: scenarioFrame(on: secondaryScreen, offset: 0)
+        )
+        #expect(secondaryPlaced)
+        guard secondaryPlaced else {
+            return
+        }
+
+        let screenService = NSScreenCoordinateService()
+        let placementSettled = waitUntil(timeout: 5.0) {
+            self.findWindow(pid: textEditPID, titleHint: titleHint).map {
+                self.displayID(for: $0.element, screenService: screenService)
+            } == secondaryDisplayID
+        }
+        #expect(placementSettled)
+        guard placementSettled,
+            let preparedFullScreenWindow = findWindow(pid: textEditPID, titleHint: titleHint)
+        else {
+            return
+        }
+
+        let enteredFullScreen = setWindowFullScreen(
+            preparedFullScreenWindow.element,
+            bundleID: textEditBundleID,
+            fullScreen: true
+        )
+        #expect(enteredFullScreen)
+        guard enteredFullScreen else {
+            return
+        }
+
+        let fullScreenSettled = waitUntil(timeout: 12.0) {
+            self.findWindow(pid: textEditPID, titleHint: titleHint).map {
+                self.isWindowFullScreen($0.element)
+            } == true
+        }
+        #expect(fullScreenSettled)
+        guard fullScreenSettled else {
+            return
+        }
+        pauseForVisualConfirmation(duration: 1.0)
+
+        let finderActivated = runAppleScript(
+            "tell application id \"\(finderBundleID)\" to activate")
+        #expect(finderActivated)
+        guard finderActivated else {
+            return
+        }
+
+        let finderReady = waitUntil(timeout: 8.0) {
+            self.runningAppPID(bundleID: finderBundleID) != nil
+        }
+        #expect(finderReady)
+        guard finderReady, let finderPID = runningAppPID(bundleID: finderBundleID) else {
+            return
+        }
+
+        let existingFinderWindows = liveWindows(pid: finderPID)
+        let createFinderWindows = runAppleScript(
+            """
+            tell application id "\(finderBundleID)"
+                activate
+                make new Finder window to (path to home folder)
+                make new Finder window to (path to home folder)
+            end tell
+            """
+        )
+        #expect(createFinderWindows)
+        guard createFinderWindows else {
+            return
+        }
+
+        let finderWindowsReady = waitUntil(timeout: 8.0) {
+            self.newlyDiscoveredWindows(pid: finderPID, excluding: existingFinderWindows).count >= 2
+        }
+        #expect(finderWindowsReady)
+        guard finderWindowsReady else {
+            return
+        }
+        pauseForVisualConfirmation(duration: 1.0)
+
+        let createdFinderWindows = newlyDiscoveredWindows(
+            pid: finderPID, excluding: existingFinderWindows
+        )
+        .filter { isFrameSettable($0.element) }
+        .sorted { lhs, rhs in
+            if lhs.frame.minX != rhs.frame.minX {
+                return lhs.frame.minX < rhs.frame.minX
+            }
+            return lhs.frame.minY < rhs.frame.minY
+        }
+        #expect(createdFinderWindows.count >= 2)
+        guard createdFinderWindows.count >= 2 else {
+            return
+        }
+
+        let finderWindowOne = createdFinderWindows[0].element
+        let finderWindowTwo = createdFinderWindows[1].element
+        defer {
+            closeWindows(pid: finderPID, elements: [finderWindowOne, finderWindowTwo])
+        }
+
+        let finderWindowOnePlaced = setWindowFrame(
+            element: finderWindowOne,
+            frame: scenarioFrame(on: primaryScreen, offset: 0)
+        )
+        let finderWindowTwoPlaced = setWindowFrame(
+            element: finderWindowTwo,
+            frame: scenarioFrame(on: secondaryScreen, offset: 0)
+        )
+        #expect(finderWindowOnePlaced)
+        #expect(finderWindowTwoPlaced)
+        guard finderWindowOnePlaced, finderWindowTwoPlaced else {
+            return
+        }
+
+        let finderPlacementSettled = waitUntil(timeout: 5.0) {
+            self.displayID(for: finderWindowOne, screenService: screenService) == primaryDisplayID
+                && self.displayID(for: finderWindowTwo, screenService: screenService)
+                    == secondaryDisplayID
+        }
+        #expect(finderPlacementSettled)
+        guard finderPlacementSettled else {
+            return
+        }
+
+        let snapshotService = AXWindowSnapshotService(screenService: screenService)
+        let snapshots = snapshotService.capture()
+        let finderSnapshots = snapshotsForWindows(
+            windows: [finderWindowOne, finderWindowTwo],
+            appSnapshots: snapshots.filter { $0.appBundleID == finderBundleID }
+        )
+        let fullScreenSnapshots = snapshots.filter { $0.appBundleID == textEditBundleID }
+        #expect(finderSnapshots.count == 2)
+        #expect(fullScreenSnapshots.isEmpty)
+        guard finderSnapshots.count == 2, fullScreenSnapshots.isEmpty else {
+            return
+        }
+
+        let movedFinderWindow = setWindowFrame(
+            element: finderWindowOne,
+            frame: scenarioFrame(on: secondaryScreen, offset: 1)
+        )
+        #expect(movedFinderWindow)
+        guard movedFinderWindow else {
+            return
+        }
+
+        let finderPerturbationSettled = waitUntil(timeout: 5.0) {
+            self.displayID(for: finderWindowOne, screenService: screenService) == secondaryDisplayID
+        }
+        #expect(finderPerturbationSettled)
+        guard finderPerturbationSettled else {
+            return
+        }
+
+        let restoreResult = snapshotService.restore(from: finderSnapshots)
+        #expect(restoreResult.recoverableFailureCount == 0)
+        #expect(restoreResult.isComplete)
+        guard restoreResult.recoverableFailureCount == 0 else {
+            return
+        }
+
+        let finderRestored = waitUntil(timeout: 8.0) {
+            self.displayID(for: finderWindowOne, screenService: screenService) == primaryDisplayID
+                && self.displayID(for: finderWindowTwo, screenService: screenService)
+                    == secondaryDisplayID
+        }
+        #expect(finderRestored)
+
+        let textEditStillRunning = runningApplication(pid: textEditPID) != nil
+        #expect(textEditStillRunning)
+
+        let postRestoreFullScreenSnapshots = snapshotService.capture().filter {
+            $0.appBundleID == textEditBundleID
+        }
+        #expect(postRestoreFullScreenSnapshots.isEmpty)
 
         pauseForVisualConfirmation(duration: 2.0)
     }
@@ -1268,6 +1526,12 @@ struct RealAppScenarioTests {
         }
     }
 
+    private func findWindow(pid: Int32, titleHint: String) -> LiveWindow? {
+        liveWindows(pid: pid).first(where: { window in
+            (window.title ?? "").lowercased().contains(titleHint)
+        })
+    }
+
     private func windowNumber(of window: AXUIElement) -> Int? {
         var value: CFTypeRef?
         guard
@@ -1284,6 +1548,47 @@ struct RealAppScenarioTests {
             return nil
         }
         return value as? String
+    }
+
+    private func boolAttribute(window: AXUIElement, attribute: CFString) -> Bool? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, attribute, &value) == .success else {
+            return nil
+        }
+        return value as? Bool
+    }
+
+    private func isWindowFullScreen(_ window: AXUIElement) -> Bool {
+        boolAttribute(window: window, attribute: "AXFullScreen" as CFString) ?? false
+    }
+
+    @discardableResult
+    private func setWindowFullScreen(_ window: AXUIElement, bundleID: String, fullScreen: Bool)
+        -> Bool
+    {
+        let targetValue: CFBoolean = fullScreen ? kCFBooleanTrue : kCFBooleanFalse
+        let attribute = "AXFullScreen" as CFString
+        let result = AXUIElementSetAttributeValue(window, attribute, targetValue)
+        if result == .success {
+            return true
+        }
+
+        if isWindowFullScreen(window) == fullScreen {
+            return true
+        }
+
+        guard runAppleScript("tell application id \"\(bundleID)\" to activate") else {
+            return false
+        }
+        pauseForVisualConfirmation(duration: 0.5)
+
+        return runAppleScript(
+            """
+            tell application "System Events"
+                keystroke "f" using {control down, command down}
+            end tell
+            """
+        )
     }
 
     private func frameForWindow(_ window: AXUIElement) -> CGRect? {

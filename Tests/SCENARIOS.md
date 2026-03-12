@@ -71,6 +71,18 @@ And Stay should not force a workspace switch as part of restore
 When the user switches back to `secondary_workspace`
 Then the TextEdit window should be restored on `secondary_screen` no later than that workspace activation
 
+### Scenario 1.6: Full-screen app is ignored
+Given that the user has two external screens (`primary_screen` and `secondary_screen`)
+And the user's computer has no internal screen
+And TextEdit is launched with one window in full-screen mode
+And Finder has two normal windows, one on each screen
+When the user saves the window layout
+And the user moves one Finder window to the opposite screen
+And the user restores the window layout
+Then the Finder windows should be restored to their saved screens
+And the full-screen TextEdit window should not be included in the restorable snapshot set
+And Stay should leave the full-screen TextEdit app under macOS full-screen placement control
+
 ## 2. Scenarios with a full sleep/wake cycle:
 ### Scenario 2.1: 2 finder windows
 Given that the user has two external screens (`screen_1` and `screen_2`)

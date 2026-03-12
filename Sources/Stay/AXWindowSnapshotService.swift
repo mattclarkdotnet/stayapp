@@ -56,9 +56,21 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
             }
             var appSnapshots: [WindowSnapshot] = []
             appSnapshots.reserveCapacity(windows.count)
+            var skippedFullScreenFrameKeys = Set<String>()
 
             for (index, window) in windows.enumerated() {
                 guard !isWindowMinimized(window), let frame = frameForWindow(window) else {
+                    continue
+                }
+
+                if isWindowFullScreen(window) {
+                    // Full-screen windows live in their own macOS space and should
+                    // stay under system placement control rather than being moved
+                    // by Stay's restore pipeline.
+                    skippedFullScreenFrameKeys.insert(Self.frameIdentityKey(frame: frame))
+                    logger.debug(
+                        "Skipping full-screen window during snapshot capture (pid=\(app.processIdentifier, privacy: .public) title=\(String(describing: self.stringValue(of: window, attribute: kAXTitleAttribute as CFString)), privacy: .public) frame=\(NSStringFromRect(frame), privacy: .public))"
+                    )
                     continue
                 }
 
@@ -139,7 +151,9 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                     appSnapshots.isEmpty || finderHasNonWindowRoleSnapshots
                 } else {
                     if appSnapshots.isEmpty {
-                        if fallbackSource == "all-window-list" {
+                        if !skippedFullScreenFrameKeys.isEmpty {
+                            false
+                        } else if fallbackSource == "all-window-list" {
                             // Generic safeguard: when AX is empty and only the full
                             // window list has candidates, require non-zero-layer
                             // evidence before trusting them as real open windows.
@@ -157,6 +171,14 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                 var appendedFallbackCount = 0
 
                 for fallbackWindow in fallbackWindows {
+                    let fallbackFrameKey = Self.frameIdentityKey(frame: fallbackWindow.frame)
+                    if skippedFullScreenFrameKeys.contains(fallbackFrameKey) {
+                        logger.debug(
+                            "Skipping WindowServer fallback for full-screen window (pid=\(app.processIdentifier, privacy: .public) title=\(String(describing: fallbackWindow.title), privacy: .public) frame=\(NSStringFromRect(fallbackWindow.frame), privacy: .public))"
+                        )
+                        continue
+                    }
+
                     if shouldSkipSnapshotWindow(
                         appBundleID: app.bundleIdentifier,
                         title: fallbackWindow.title,
@@ -167,7 +189,6 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
                         continue
                     }
 
-                    let fallbackFrameKey = Self.frameIdentityKey(frame: fallbackWindow.frame)
                     guard !knownFrameKeys.contains(fallbackFrameKey) else {
                         continue
                     }
@@ -615,6 +636,15 @@ final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRest
         guard
             let value = copyAttributeValue(
                 element: window, attribute: kAXMinimizedAttribute as CFString)
+        else {
+            return false
+        }
+
+        return (value as? Bool) ?? false
+    }
+
+    private func isWindowFullScreen(_ window: AXUIElement) -> Bool {
+        guard let value = copyAttributeValue(element: window, attribute: "AXFullScreen" as CFString)
         else {
             return false
         }

@@ -141,6 +141,7 @@ Scenarios currently automated from `SCENARIOS.md`:
 - two Finder windows, one per screen
 - two non-Finder app windows (TextEdit), one per screen
 - one TextEdit window on a secondary workspace, restored when that workspace becomes active
+- one full-screen TextEdit window ignored while Finder windows are restored normally
 - FreeCAD main window + child windows (tasks/model/report/python console) across two screens
 - KiCad main + PCB editor on primary screen, schematic editor on secondary screen
 - full wake/sleep Finder two-window scenario (`WakeCycleScenarios prepare/verify finder`)
@@ -182,6 +183,7 @@ Add/expand tests for:
   `activeSpaceDidChange`
 - inactive-workspace-specific deferrals (`deferredInactiveWorkspaceSnapshots`) only
   retrying after `activeSpaceDidChange`
+- full-screen windows being excluded from capture/fallback so restore does not target them
 - untitled multi-window matching using enriched identity (`windowNumber`, role/subrole)
 - Finder-specific capture/restore quirks (Desktop pseudo-window filtering, display-first restore semantics)
 

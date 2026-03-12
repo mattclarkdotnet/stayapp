@@ -170,12 +170,15 @@ Scope:
 - end-to-end app process startup
 - logging and diagnostics behavior
 - sanity checks around snapshot persistence path and format
+- full-screen windows being excluded from the restorable snapshot set
 
 How:
 
 - run `swift test --filter StayIntegrationTests.RealAppScenarioTests`
 - tests launch real apps (Finder/TextEdit/FreeCAD/KiCad), move real windows across screens,
   and for the workspace scenario switch real Mission Control spaces before running capture/restore
+- the full-screen scenario uses a real TextEdit full-screen window and verifies capture keeps it
+  out of the restorable snapshot set while normal Finder restore still succeeds
 - scripted Finder/TextEdit scenarios reset the target app before setup so stale windows do not
   carry across repeated runs
 - use logs (`log stream --predicate 'subsystem == "com.stay.app"'`) when investigating failures

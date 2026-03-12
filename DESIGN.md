@@ -51,6 +51,9 @@ This separation keeps OS-specific behavior out of core logic and allows determin
 - Capture can also mark apps explicitly observed with zero windows; when that
   happens, persisted fallback windows for those apps are suppressed so stale
   windows are not resurrected on wake.
+- AX capture skips full-screen windows and suppresses matching WindowServer
+  fallback surfaces so macOS full-screen spaces stay under system control
+  instead of being treated as restorable normal windows.
 - In-memory wake cache is overwritten on every sleep cycle (including empty
   merges) so stale snapshots from earlier cycles cannot leak into a later wake.
 - Any pending restore task is canceled.
@@ -246,6 +249,7 @@ Real-app no-sleep integration tests in `StayIntegrationTests.RealAppScenarioTest
 - two TextEdit windows across two displays
 - one TextEdit window captured on a secondary Mission Control workspace, then restored
   when that workspace becomes active again
+- one full-screen TextEdit window ignored while Finder windows are captured/restored
 - FreeCAD main window + child windows (tasks/model/report/python console) across two displays
 - KiCad main + PCB editor on primary display, schematic editor on secondary display
 
