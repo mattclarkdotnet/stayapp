@@ -2,22 +2,29 @@
 
 ## Now
 
-1. Changes in monitor configuration between sleep and wake
-- It's OK to do nothing; we just don't want to crash or cause any unexpected window movements.
+1. Changes in monitor configuration while the system is awake
+- If a display disappears while Stay is awake, snapshots targeting that display should be invalidated so later restores do not use stale placement data.
 
 ## Next
 
-1. Productization
-- App icon and branding assets.
-- Start-on-login hardening.
-- Packaging/signing/notarization/distribution workflows.
+1. The same display is disconnected and reconnected while the system is awake
+- If a display disappears and then the same display comes back while Stay is still running, windows should end up where they were before the disconnect.
 
 ## Later
 
-1. Complex wake ordering is handled explicitly
+1. Changes in monitor configuration between sleep and wake
+- Handle the harder case where a missing display during restore may be a real topology change or just a slow wake.
+- It's OK to do nothing; we just don't want to crash or cause any unexpected window movements.
+2. Productization
+- App icon and branding assets.
+- Start-on-login hardening.
+- Packaging/signing/notarization/distribution workflows.
+3. Complex wake ordering is handled explicitly
 - Handle screens waking in different orders.
 - Handle login occurring while only one screen is active.
 - Implement this with explicit state machines in `StayCore` (no ad-hoc procedural branching).
+4. Replacement secondary displays inherit prior secondary-display windows
+- If one secondary display is disconnected and a different secondary display is connected later, Stay should move windows that were previously assigned to the removed secondary display onto the newly connected secondary display.
 
 ## Completed
 

@@ -7,6 +7,7 @@ As a coding agent, read this file to understand how to contribute to the codebas
 Make changes incrementally, running tests after each change to ensure the code remains correct.  It's best to run unit tests as often as possible, with small changes in between.  It's far quicker to fix a broken test than to revert a broken implementation.  
 
 When things are going wrong, and changes are not improving the situation, stop and rethink your approach.  Always keep the design simple and correct before adding complexity.  Use your knowledge of the whole codebase to refactor as you go.  If repeated changes aren't solving the problem, backtrack to a known good working point and start again with a different approach.
+- When the scope or ordering of a plan is unclear, prefer a short back-and-forth with the user to confirm the framing before locking the roadmap or plan around it.
 
 ## Project goals
 
@@ -66,4 +67,4 @@ PLAN.md must be replaced every time the roadmap changes, so that it always repre
 - Functional core, imperative shell - most functions should be pure, if they are not then they should be idempotent
 - Use type-driven-design - functions should be defined by their types, not their implementation
 - Prefer smaller classes, modules and functions - use the single responsibility principle, and aim to keep source files below 500 lines
--
+- Do the simplest thing that could possibly work
