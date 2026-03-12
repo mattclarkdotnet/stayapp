@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 import Foundation
+import StayCore
 import WakeCycleScenariosCore
 
 @MainActor
@@ -118,6 +119,8 @@ struct WakeCycleScenarioRunner {
                 try cycle(scenario: scenario)
             case .resume:
                 try resume(scenario: scenario)
+            case .awakeDisplay:
+                try runAwakeDisplayDisconnectScenario(scenario: scenario)
             }
             return 0
         } catch {
@@ -133,6 +136,7 @@ struct WakeCycleScenarioRunner {
               swift run WakeCycleScenarios prepare <finder|app|app-workspace|freecad|kicad> [--no-sleep]
               swift run WakeCycleScenarios verify <finder|app|app-workspace|freecad|kicad> [--check-only]
               swift run WakeCycleScenarios cycle <finder|app|app-workspace|freecad|kicad>
+              swift run WakeCycleScenarios awake-display <finder|app>
 
             Notes:
               - Requires exactly two external displays and no built-in display.
@@ -141,6 +145,7 @@ struct WakeCycleScenarioRunner {
               - verify defaults to: perturb one tracked window, restore tracked windows, then verify.
               - verify --check-only performs passive post-wake validation with no perturb/restore.
               - cycle runs prepare, sleeps the machine, waits for wake/session readiness, then auto-runs verify.
+              - awake-display prepares the no-sleep scenario, captures Stay snapshots, waits for a real secondary-display disconnect, verifies stale targets were pruned, then verifies the windows return after the same display reconnects.
               - optional fallback: set STAY_CYCLE_ENABLE_LAUNCH_AGENT=1 to enable LaunchAgent-based resume.
             """)
     }

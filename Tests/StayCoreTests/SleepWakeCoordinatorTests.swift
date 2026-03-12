@@ -173,6 +173,31 @@ struct SleepWakeCoordinatorTests {
         #expect(restore.calls[0] == [first])
     }
 
+    @Test("Reactivated snapshots schedule restore when display returns")
+    func reactivatedSnapshotsScheduleRestore() {
+        let secondary = sampleSnapshot(title: "Secondary", index: 1, screenDisplayID: 2)
+
+        let capture = StubCaptureService()
+        let restore = SpyRestoreService()
+        let repository = InMemoryRepository()
+        let scheduler = ManualScheduler()
+
+        let coordinator = SleepWakeCoordinator(
+            capturing: capture,
+            restoring: restore,
+            repository: repository,
+            scheduler: scheduler,
+            wakeDelay: 1
+        )
+
+        coordinator.handleReactivatedSnapshotsAvailable([secondary])
+        #expect(scheduler.pendingCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 1)
+        #expect(restore.calls[0] == [secondary])
+    }
+
     @Test("Repeated wake events schedule only one restore")
     func repeatedWakeEventsScheduleOnlyOneRestore() {
         let snapshots = [sampleSnapshot(title: "Mail", index: 0)]

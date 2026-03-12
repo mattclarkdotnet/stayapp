@@ -75,6 +75,64 @@ extension WakeCycleScenarioRunner {
         }
     }
 
+    func stayExecutableURL() -> URL {
+        URL(fileURLWithPath: args[0])
+            .deletingLastPathComponent()
+            .appendingPathComponent("Stay", isDirectory: false)
+    }
+
+    func startStayIfNeeded() throws -> Process? {
+        if isStayProcessRunning() {
+            print("Using existing Stay process.")
+            return nil
+        }
+
+        let executableURL = stayExecutableURL()
+        guard fileManager.fileExists(atPath: executableURL.path) else {
+            throw RunnerError.failed("could not find Stay executable at \(executableURL.path)")
+        }
+
+        let process = Process()
+        process.executableURL = executableURL
+
+        do {
+            try process.run()
+        } catch {
+            throw RunnerError.failed("failed to start Stay: \(error.localizedDescription)")
+        }
+
+        sleepRunLoop(2.0)
+        guard process.isRunning else {
+            throw RunnerError.failed("Stay exited immediately after launch")
+        }
+
+        print("Started Stay process for awake-display scenario.")
+        return process
+    }
+
+    func terminateStartedStayProcess(_ process: Process?) {
+        guard let process, process.isRunning else {
+            return
+        }
+        process.terminate()
+    }
+
+    func isStayProcessRunning() -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        process.arguments = ["-x", "Stay"]
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+
     func escaped(_ value: String) -> String {
         value.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")

@@ -245,6 +245,46 @@ public final class SleepWakeCoordinator {
         return removedPendingCount
     }
 
+    /// Requeues snapshots whose display became available again while awake.
+    public func handleReactivatedSnapshotsAvailable(_ snapshots: [WindowSnapshot]) {
+        lock.lock()
+        guard !isSleeping, !snapshots.isEmpty else {
+            lock.unlock()
+            return
+        }
+
+        let uniqueSnapshots = snapshots.filter { snapshot in
+            !pendingRestoreSnapshots.contains(snapshot)
+                && !inactiveWorkspacePendingSnapshots.contains(snapshot)
+        }
+        guard !uniqueSnapshots.isEmpty else {
+            lock.unlock()
+            return
+        }
+
+        if isAwaitingRestore {
+            pendingRestoreSnapshots.append(contentsOf: uniqueSnapshots)
+            if restoreDeadline == nil {
+                restoreDeadline = Date().addingTimeInterval(maxWaitAfterWake)
+            }
+            resetRestoreAttemptTracking()
+            clearDeferredExposureWait()
+            logger.info(
+                "Reactivated \(uniqueSnapshots.count, privacy: .public) snapshot(s) after display reconnect; scheduling restore attempt"
+            )
+            scheduleRestoreAttempt(after: 0.25)
+            lock.unlock()
+            return
+        }
+
+        startRestoreCycle(
+            with: uniqueSnapshots,
+            initialDelay: 0.25,
+            reason: "display-reconnect"
+        )
+        lock.unlock()
+    }
+
     private func scheduleRestoreAttempt(after delay: TimeInterval) {
         logger.debug("Scheduling restore attempt in \(delay, privacy: .public)s")
         restoreTask?.cancel()

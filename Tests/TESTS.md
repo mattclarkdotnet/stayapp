@@ -51,6 +51,13 @@ To run the awake-time display invalidation coverage:
 swift test --filter 'JSONSnapshotRepositoryTests|ScreenConfigurationObserverTests'
 ```
 
+To run the guided real-hardware awake-time display-disconnect/reconnect check:
+
+```bash
+swift run WakeCycleScenarios awake-display finder
+swift run WakeCycleScenarios awake-display app
+```
+
 Wake-cycle scenarios (with real sleep/wake) use the runner executable:
 
 ```bash
@@ -91,6 +98,13 @@ swift run WakeCycleScenarios verify app-workspace --check-only
 swift run WakeCycleScenarios verify freecad --check-only
 swift run WakeCycleScenarios verify kicad --check-only
 ```
+
+Guided awake-time display-disconnect/reconnect QA:
+
+1. Run `swift run WakeCycleScenarios awake-display finder` or `swift run WakeCycleScenarios awake-display app`.
+2. Disconnect the secondary display when prompted.
+3. Reconnect the same secondary display when prompted.
+4. The runner handles window setup, snapshot creation, invalidation verification, reconnect verification, and cleanup.
 
 ## Full-Cycle Automation Behavior
 
@@ -160,6 +174,7 @@ Scenarios currently automated from `SCENARIOS.md`:
 - launch-time pause mode when `Displays have separate Spaces` is enabled
 - awake-time display disconnect invalidating stale saved snapshots for that display
 - awake-time display disconnect invalidating stale queued restore targets before they run
+- awake-time same-display reconnect restoring windows back to the reconnected display
 - one TextEdit window on a secondary workspace, restored when that workspace becomes active
 - one full-screen TextEdit window ignored while Finder windows are restored normally
 - FreeCAD main window + child windows (tasks/model/report/python console) across two screens
@@ -207,6 +222,7 @@ Add/expand tests for:
 - separate-spaces launch gating pausing Stay and disabling manual capture/restore
 - awake-time screen-parameter changes invalidating stale persisted display targets
 - awake-time screen-parameter changes invalidating stale in-memory pending restore targets
+- awake-time same-display reconnect reactivating suspended targets and restoring windows automatically
 - untitled multi-window matching using enriched identity (`windowNumber`, role/subrole)
 - Finder-specific capture/restore quirks (Desktop pseudo-window filtering, display-first restore semantics)
 

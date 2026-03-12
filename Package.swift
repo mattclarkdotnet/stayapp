@@ -23,7 +23,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "WakeCycleScenarios",
-            dependencies: ["WakeCycleScenariosCore"]
+            dependencies: ["WakeCycleScenariosCore", "StayCore"]
         ),
         .testTarget(
             name: "StayCoreTests",

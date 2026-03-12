@@ -170,6 +170,7 @@ Scope:
 
 - launch-time separate-spaces suspension policy
 - awake-time screen-configuration observer wiring
+- awake-time same-display disconnect/reconnect restore behavior
 - real-app capture/restore scenarios without sleep (from `Tests/SCENARIOS.md`)
 - end-to-end app process startup
 - logging and diagnostics behavior
@@ -180,6 +181,7 @@ How:
 
 - run `swift test --filter SeparateSpacesPolicyTests`
 - run `swift test --filter 'JSONSnapshotRepositoryTests|ScreenConfigurationObserverTests'`
+- for guided awake-time hardware QA, run `swift run WakeCycleScenarios awake-display finder|app`
 - run `swift test --filter StayIntegrationTests.RealAppScenarioTests`
 - tests launch real apps (Finder/TextEdit/FreeCAD/KiCad), move real windows across screens,
   and for the workspace scenario switch real Mission Control spaces before running capture/restore
@@ -198,6 +200,11 @@ How:
   2. let the machine sleep/wake and log in
   3. `swift run WakeCycleScenarios verify finder|app|app-workspace|freecad|kicad`
   4. optional passive check: `swift run WakeCycleScenarios verify finder|app|app-workspace|freecad|kicad --check-only`
+- awake-time display-disconnect/reconnect hardware QA is also available:
+  1. `swift run WakeCycleScenarios awake-display finder|app`
+  2. disconnect the secondary display when prompted
+  3. reconnect the same secondary display when prompted
+  4. runner handles setup, snapshot creation, invalidation check, reconnect verification, and cleanup
 
 Limitations:
 

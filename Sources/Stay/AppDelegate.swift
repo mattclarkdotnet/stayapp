@@ -9,7 +9,7 @@ import StayCore
 final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
     private let logger = Logger(subsystem: "com.stay.app", category: "AppDelegate")
     private let separateSpacesPolicy: SeparateSpacesSuspensionPolicy
-    private let notifier: any StayUserNotifying
+    private let notifierFactory: () -> any StayUserNotifying
     private var statusItem: NSStatusItem?
     private var coordinator: SleepWakeCoordinator?
     private var sleepWakeObserver: SleepWakeObserver?
@@ -23,11 +23,11 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
     init(
         separateSpacesPreferenceReader: any SeparateSpacesPreferenceReading =
             MacOSSeparateSpacesPreferenceReader(),
-        notifier: any StayUserNotifying = StayUserNotificationCenter()
+        notifierFactory: @escaping () -> any StayUserNotifying = { StayUserNotificationCenter() }
     ) {
         self.separateSpacesPolicy = SeparateSpacesSuspensionPolicy(
             preferenceReader: separateSpacesPreferenceReader)
-        self.notifier = notifier
+        self.notifierFactory = notifierFactory
         super.init()
     }
 
@@ -63,8 +63,10 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
         self.coordinator = coordinator
         self.sleepWakeObserver = SleepWakeObserver(coordinator: coordinator)
         self.screenConfigurationObserver = ScreenConfigurationObserver(
-            repository: repository,
+            snapshotReader: repository,
+            snapshotWriter: repository,
             pendingSnapshotInvalidator: coordinator,
+            reactivatedSnapshotRestorer: coordinator,
             displayInventory: screenService
         )
 
@@ -88,7 +90,7 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
         updateStatus(SeparateSpacesSuspensionPolicy.suspendedStatusLine)
 
         if !hasSentSeparateSpacesNotification {
-            notifier.notifySeparateSpacesSuspended()
+            notifierFactory().notifySeparateSpacesSuspended()
             hasSentSeparateSpacesNotification = true
         }
 

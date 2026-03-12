@@ -6,6 +6,7 @@ public enum WakeCycleCommand: String, Codable, Equatable, Sendable {
     case verify
     case cycle
     case resume
+    case awakeDisplay = "awake-display"
 }
 
 /// Scenario identifiers accepted by `WakeCycleScenarios`.
@@ -88,7 +89,7 @@ public enum WakeCycleInvocationParser {
                 shouldSleep: false,
                 checkOnly: options.contains("--check-only")
             )
-        case .cycle, .resume:
+        case .cycle, .resume, .awakeDisplay:
             guard options.isEmpty else {
                 throw WakeCycleInvocationParseError.unknownOptions(options)
             }
