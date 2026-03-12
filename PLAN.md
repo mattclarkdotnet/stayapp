@@ -1,38 +1,31 @@
-# Plan: Multiple Workspace Restore
+# Plan: Separate Spaces Compatibility
 
 ## Roadmap alignment
 
-- This plan implements `ROADMAP.md` `Now` by adding workspace-aware restore behavior while preserving existing wake-cycle and no-sleep stability guarantees.
+- This plan implements `ROADMAP.md` `Now` by determining whether enabling macOS `Displays have separate Spaces` needs any product changes, starting with the smallest plausible outcome: existing behavior already works and only explicit coverage/docs are missing.
 
 ## Objective
 
-- Add deterministic multi-workspace window restoration using explicit state-machine transitions and workspace-scoped pending snapshot tracking so windows in inactive spaces are restored when their space becomes active.
+- Test the simple hypothesis first by running focused real-app scenarios with `Displays have separate Spaces` enabled, and only add code if those probes expose a concrete capture/restore failure.
 
 ## Scenario mapping
 
-- Scenario 1.1 / 1.2 (`finder`, `app` no-sleep): keep current behavior unchanged on a single active workspace while proving restore remains idempotent.
-- Scenario 1.3 / 1.4 (`freecad`, `kicad` no-sleep): preserve child-window/split-editor matching while introducing workspace-scoped retry state.
-- Scenario 2.1-2.4 (`cycle` wake/sleep): extend wake orchestration so deferred windows are partitioned by active workspace and retried only when relevant workspace signals arrive.
-- Working assumption: windows keep their workspace identity across sleep/wake; restore logic only needs to react to active-workspace visibility changes at restore time.
-- Implementation detail: add a workspace-aware pending model in `StayCore` that partitions unresolved snapshots into `active-workspace` and `inactive-workspace` subsets, with explicit transitions for `didWake`, `activeSpaceDidChange`, timeout, and completion.
-- Implementation detail: extend restore result/accounting to report workspace progress (resolved now vs deferred to other workspace) so coordinator decisions are based on typed state rather than implicit counts.
-- Implementation detail: keep all workspace policy in `StayCore`; `Stay` layer only emits environment/workspace-change signals.
+- Probe Scenario 1.1 / 1.2 first under `Displays have separate Spaces = ON`: if standard two-window Finder/TextEdit restore still works unchanged, treat that as evidence that the simple path may be sufficient.
+- If the simple probe passes, add explicit scenario coverage and documentation for the enabled-setting case before broadening scope.
+- If the simple probe fails, add the narrowest reproducer that distinguishes whether the problem is capture, restore matching, display-ID mapping, or workspace/space-selection behavior.
+- Only after a reproduced failure should the plan expand to workspace-aware or per-display-space policy changes in production code.
 
 ## Exit criteria
 
-- `SleepWakeCoordinator` uses explicit workspace-aware state transitions (documented in `DESIGN.md`) instead of ad-hoc branching for active-space retries.
-- Deterministic tests cover:
-  - windows deferred to inactive workspace are not repeatedly retried on interval,
-  - `activeSpaceDidChange` retriggers only relevant pending workspace snapshots,
-  - repeated workspace-change noise does not create unbounded retry loops,
-  - already-restored workspace snapshots remain no-op on subsequent signals.
-- Existing baseline test gates remain green:
-  - `swift test --filter StayCoreTests`
-  - `swift test --filter WakeCycleScenariosCoreTests`
+- The repo documents how `Displays have separate Spaces` is expected to behave and what has been verified.
+- At least one automated or repeatable real-app probe exists for the enabled-setting case, starting with the unchanged-behavior hypothesis.
+- If probes pass, the item may complete with scenario coverage plus docs only.
+- If probes fail, a failing automated test/reproducer exists before any production-code fix is promoted.
+- Baseline verification for whatever path is taken remains green:
+  - `swift test --filter StayIntegrationTests.RealAppScenarioTests`
   - `swift test --filter WindowRoundTripTests`
-  - repeated `STAY_REALAPP_VISUAL_PAUSE=0 swift test --filter RealAppScenarioTests`
-- `TESTING.md` and `Tests/TESTS.md` describe the workspace model, expected retry behavior, and known limits.
+  - targeted wake-cycle runs if the enabled-setting probe reaches sleep/wake scope
 
 ## Promotion rule
 
-- Promote this plan only when multi-workspace behavior is validated by deterministic coordinator tests plus repeated real-app runs, with no regression to single-workspace scenarios and no known workspace-retry flake path.
+- Promote this plan only after the simple no-code hypothesis has been tested first and either accepted with explicit coverage or rejected with a narrowly scoped failing reproducer that justifies deeper changes.
