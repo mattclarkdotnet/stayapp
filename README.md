@@ -29,6 +29,9 @@ swift run Stay
 ```
 
 This stages a launchable `Stay.app` bundle at `dist/Stay.app`.
+If a `Developer ID Application` signing identity is available locally, the script uses it automatically.
+Otherwise it falls back to `Apple Development`, and only then to ad-hoc signing.
+When using `Developer ID Application`, the bundle is signed with hardened runtime so it is notarization-ready.
 
 ## Install
 
@@ -37,11 +40,26 @@ This stages a launchable `Stay.app` bundle at `dist/Stay.app`.
 ```
 
 By default this installs `Stay.app` into `~/Applications`.
+By default this installs `Stay.app` into `/Applications`.
 
 Launch it normally with:
 
 ```bash
-open ~/Applications/Stay.app
+open /Applications/Stay.app
+```
+
+## Notarize
+
+Store credentials once:
+
+```bash
+./Scripts/store-notary-credentials.sh StayNotary
+```
+
+Then notarize and staple the app bundle:
+
+```bash
+NOTARY_PROFILE=StayNotary ./Scripts/notarize-stay-app.sh
 ```
 
 ## Test

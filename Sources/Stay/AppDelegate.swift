@@ -10,6 +10,7 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
     private let logger = Logger(subsystem: "com.stay.app", category: "AppDelegate")
     private let separateSpacesPolicy: SeparateSpacesSuspensionPolicy
     private let notifierFactory: () -> any StayUserNotifying
+    private let launchAtLoginController: any LaunchAtLoginControlling
     private var statusItem: NSStatusItem?
     private var coordinator: SleepWakeCoordinator?
     private var sleepWakeObserver: SleepWakeObserver?
@@ -23,11 +24,13 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
     init(
         separateSpacesPreferenceReader: any SeparateSpacesPreferenceReading =
             MacOSSeparateSpacesPreferenceReader(),
-        notifierFactory: @escaping () -> any StayUserNotifying = { StayUserNotificationCenter() }
+        notifierFactory: @escaping () -> any StayUserNotifying = { StayUserNotificationCenter() },
+        launchAtLoginController: any LaunchAtLoginControlling = LaunchAtLoginController()
     ) {
         self.separateSpacesPolicy = SeparateSpacesSuspensionPolicy(
             preferenceReader: separateSpacesPreferenceReader)
         self.notifierFactory = notifierFactory
+        self.launchAtLoginController = launchAtLoginController
         super.init()
     }
 
@@ -113,6 +116,34 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(status)
 
         menu.addItem(.separator())
+        let launchAtLoginStatus = launchAtLoginController.status()
+        let launchAtLoginItem = makeMenuItem(
+            title: "Launch At Login",
+            action: #selector(toggleLaunchAtLogin),
+            key: ""
+        )
+        launchAtLoginItem.state = launchAtLoginMenuState(for: launchAtLoginStatus)
+        launchAtLoginItem.isEnabled = launchAtLoginStatus != .unavailable
+        menu.addItem(launchAtLoginItem)
+
+        if launchAtLoginStatus == .requiresApproval {
+            let reviewItem = makeMenuItem(
+                title: "Open Login Items Settings",
+                action: #selector(openLoginItemsSettings),
+                key: ""
+            )
+            menu.addItem(reviewItem)
+        } else if launchAtLoginStatus == .unavailable {
+            let infoItem = NSMenuItem(
+                title: "Install Stay.app to enable launch at login",
+                action: nil,
+                keyEquivalent: ""
+            )
+            infoItem.isEnabled = false
+            menu.addItem(infoItem)
+        }
+
+        menu.addItem(.separator())
         let captureItem = makeMenuItem(
             title: "Capture Layout Now",
             action: #selector(captureLayoutNow),
@@ -142,6 +173,42 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
     private func updateStatus(_ value: String) {
         statusLine = value
         rebuildMenu()
+    }
+
+    private func launchAtLoginMenuState(for status: LaunchAtLoginStatus) -> NSControl.StateValue {
+        switch status {
+        case .enabled:
+            return .on
+        case .disabled, .unavailable:
+            return .off
+        case .requiresApproval:
+            return .mixed
+        }
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        let currentStatus = launchAtLoginController.status()
+        let shouldEnable = currentStatus == .disabled
+
+        do {
+            try launchAtLoginController.setEnabled(shouldEnable)
+            if shouldEnable {
+                updateStatus("Launch at login enabled")
+            } else {
+                updateStatus("Launch at login disabled")
+            }
+        } catch LaunchAtLoginError.unavailable {
+            updateStatus("Install Stay.app to enable login launch")
+        } catch {
+            logger.error(
+                "Launch-at-login change failed: \(String(describing: error), privacy: .public)")
+            updateStatus("Launch at login update failed")
+        }
+    }
+
+    @objc private func openLoginItemsSettings() {
+        launchAtLoginController.openSystemSettings()
+        updateStatus("Review Login Items settings")
     }
 
     @objc private func captureLayoutNow() {

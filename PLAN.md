@@ -1,31 +1,25 @@
-# Plan: Start On Login As Early As macOS Allows
+# Plan: Distribution
 
 ## Roadmap alignment
 
-- This plan implements `ROADMAP.md` `Now` by building login-item support on top of the newly installed `Stay.app` bundle identity.
+- This plan implements `ROADMAP.md` `Now` by turning the notarized local app bundle flow into a repeatable distribution path, starting with TestFlight-facing requirements and then App Store delivery.
 
 ## Objective
 
-- Launch Stay automatically as early as macOS allows after login, without introducing duplicate launches or destabilizing the existing restore behavior.
-
-## Assumptions
-
-- Login-item registration should target the installed app bundle rather than a SwiftPM build artifact.
-- "As early as macOS allows" means using the supported login-item mechanism correctly, not trying to out-race every other app with unsupported startup hacks.
-- Distribution concerns remain out of scope for this plan unless they block local login-item verification.
+- Produce the smallest credible release pipeline that moves Stay from a locally installable notarized app toward real distribution without destabilizing the validated runtime behavior, while assuming TestFlight/App Store work will need extra metadata, entitlements, and App Store Connect decisions beyond the current local notarized Developer ID flow.
 
 ## Scenario mapping
 
-- The user installs `Stay.app`, enables launch at login, logs out, and logs back in; Stay starts automatically without manual relaunch.
-- Login-item registration remains stable across repeated app launches and does not create duplicate Stay processes.
-- The login-item path preserves the existing menu-bar-only behavior and still respects the separate-spaces suspension policy at launch.
+- A release build can be produced from the repository with the signing/trust properties required for external distribution.
+- Distribution-specific metadata and packaging choices remain aligned with the current menu-bar-only app behavior and login-item support.
+- The path to TestFlight is explicit, and any App Store-specific gaps are documented rather than being left implicit.
 
 ## Exit criteria
 
-- Stay can be enabled for automatic login launch from the installed app bundle and starts reliably after login.
-- The chosen login-item behavior is documented clearly enough for the later distribution roadmap item to build on it.
-- Existing focused restore verification remains green after the login-item changes.
+- The distribution workflow is documented clearly enough to produce a repeatable release candidate.
+- Existing focused restore and login-item verification remain green after the distribution changes.
+- Any remaining App Store or TestFlight blockers are captured explicitly if they cannot be solved in the first slice.
 
 ## Promotion rule
 
-- Promote this plan only after login launch works end-to-end from the installed bundle; if App Store/TestFlight constraints become the main blocker, record them and move on to the separate distribution roadmap item.
+- Promote this plan only after at least one real distribution path is proven end-to-end; if App Store requirements exceed the first slice, finish the TestFlight-ready path and record the remaining App Store work explicitly.

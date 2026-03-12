@@ -174,6 +174,8 @@ Scope:
 - awake-time same-display disconnect/reconnect restore behavior
 - post-wake restore deferring windows whose saved display is still unavailable
 - bundle metadata and bundle staging/install scripts
+- launch-at-login state/control logic for installed app bundles
+- notarization-ready signing and stapling workflow for Developer ID builds
 - real-app capture/restore scenarios without sleep (from `Tests/SCENARIOS.md`)
 - end-to-end app process startup
 - logging and diagnostics behavior
@@ -186,9 +188,12 @@ How:
 - run `swift test --filter 'JSONSnapshotRepositoryTests|ScreenConfigurationObserverTests'`
 - run `swift test --filter AXWindowSnapshotServiceTests`
 - run `swift test --filter BundleMetadataTests`
+- run `swift test --filter LaunchAtLoginControllerTests`
 - for guided awake-time hardware QA, run `swift run WakeCycleScenarios awake-display finder|app`
 - run `swift test --filter StayIntegrationTests.RealAppScenarioTests`
 - run `./Scripts/build-stay-app.sh` to verify the bundle can be staged successfully
+- when validating launch-at-login, prefer a build signed with a local `Developer ID Application` identity
+- run `NOTARY_PROFILE=... ./Scripts/notarize-stay-app.sh` to validate notarization/stapling when credentials are available
 - tests launch real apps (Finder/TextEdit/FreeCAD/KiCad), move real windows across screens,
   and for the workspace scenario switch real Mission Control spaces before running capture/restore
 - the full-screen scenario uses a real TextEdit full-screen window and verifies capture keeps it

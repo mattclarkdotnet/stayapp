@@ -110,7 +110,7 @@ And Stay should restore the affected windows back to `secondary_screen`
 
 ### Scenario 1.10: Stay can be installed as an app bundle
 Given that the developer has built `Stay.app` with the checked-in bundle script
-When the developer installs the bundled app into `~/Applications`
+When the developer installs the bundled app into `/Applications`
 And launches Stay from that installed app bundle
 Then Stay should enter the same menu-bar-only flow as the development executable
 And Stay should not depend on the transient SwiftPM build path to be launchable

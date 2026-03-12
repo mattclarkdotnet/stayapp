@@ -15,6 +15,7 @@ Automated tests cover two layers:
 - Wake-cycle core tests: `Tests/WakeCycleScenariosCoreTests/*`
 - Wake-cycle core coverage includes invocation parsing, scenario metadata, cycle-state codecs, scenario-state/report codecs, and malformed decode paths
 - Bundle metadata tests: `Tests/StayIntegrationTests/BundleMetadataTests.swift`
+- Launch-at-login tests: `Tests/StayIntegrationTests/LaunchAtLoginControllerTests.swift`
 - Fixture round-trip tests: `Tests/StayIntegrationTests/WindowRoundTripTests.swift`
 - Restore availability tests: `Tests/StayIntegrationTests/AXWindowSnapshotServiceTests.swift`
 - Separate-spaces policy tests: `Tests/StayIntegrationTests/SeparateSpacesPolicyTests.swift`
@@ -63,6 +64,19 @@ To run the bundle metadata coverage:
 
 ```bash
 swift test --filter BundleMetadataTests
+```
+
+To run the launch-at-login coverage:
+
+```bash
+swift test --filter LaunchAtLoginControllerTests
+```
+
+To validate the notarization workflow manually:
+
+```bash
+./Scripts/store-notary-credentials.sh StayNotary
+NOTARY_PROFILE=StayNotary ./Scripts/notarize-stay-app.sh
 ```
 
 To run the guided real-hardware awake-time display-disconnect/reconnect check:
