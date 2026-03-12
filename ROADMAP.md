@@ -2,23 +2,27 @@
 
 ## Now
 
-1. Productization
-- App icon and branding assets.
-- Start-on-login hardening.
-- Packaging/signing/notarization/distribution workflows.
+1. Bundling and installability
+- Produce a real macOS app bundle with the metadata, assets, and launch structure needed to install and run Stay normally outside a raw SwiftPM executable path.
 
 ## Next
 
-1. Complex wake ordering is handled explicitly
-- Handle screens waking in different orders.
-- Handle login occurring while only one screen is active.
-- Implement this with explicit state machines in `StayCore` (no ad-hoc procedural branching).
+1. Start on login as early as macOS allows
+- Register Stay to launch automatically after login and make that startup path reliable enough for normal daily use.
+- Treat "as early as macOS allows" as the goal, not strict ordering guarantees against every other app.
 
 ## Later
 
-1. Replacement secondary displays inherit prior secondary-display windows
+1. Distribution
+- Prepare Stay for TestFlight distribution first, then App Store distribution.
+- Capture the packaging/signing requirements separately from installability so release work can progress without blocking local productization.
+2. Complex wake ordering is handled explicitly
+- Handle screens waking in different orders.
+- Handle login occurring while only one screen is active.
+- Implement this with explicit state machines in `StayCore` (no ad-hoc procedural branching).
+3. Replacement secondary displays inherit prior secondary-display windows
 - If one secondary display is disconnected and a different secondary display is connected later, Stay should move windows that were previously assigned to the removed secondary display onto the newly connected secondary display.
-2. Edge cases for awake-time same-display reconnect are hardened
+4. Edge cases for awake-time same-display reconnect are hardened
 - Repeated disconnect/reconnect cycles should not duplicate queued restore work or restore the wrong snapshot generation.
 - Multi-window apps should converge cleanly if macOS temporarily bunches their windows onto the primary display before the original secondary display comes back.
 
