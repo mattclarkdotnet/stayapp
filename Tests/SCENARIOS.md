@@ -90,6 +90,14 @@ Then Stay should not capture or restore window layouts
 And Stay should disable manual capture and restore actions
 And Stay should notify the user that macOS is preserving placement until the setting changes again
 
+### Scenario 1.8: Removed display snapshots are invalidated while awake
+Given that the user has two external screens (`primary_screen` and `secondary_screen`)
+And the user's computer has no internal screen
+And Stay has saved window snapshots for both screens
+When `secondary_screen` is disconnected while Stay is awake
+Then Stay should invalidate the saved snapshot entries that targeted `secondary_screen`
+And later restore attempts should not use stale placement targets from the removed screen
+
 ## 2. Scenarios with a full sleep/wake cycle:
 ### Scenario 2.1: 2 finder windows
 Given that the user has two external screens (`screen_1` and `screen_2`)

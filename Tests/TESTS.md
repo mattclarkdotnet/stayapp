@@ -11,10 +11,12 @@ Automated tests cover two layers:
 
 - Core tests: `Tests/StayCoreTests/SleepWakeCoordinatorTests.swift`
 - Core helper tests: `Tests/StayCoreTests/SnapshotSetOperationsTests.swift`
+- Persistence invalidation tests: `Tests/StayCoreTests/JSONSnapshotRepositoryTests.swift`
 - Wake-cycle core tests: `Tests/WakeCycleScenariosCoreTests/*`
 - Wake-cycle core coverage includes invocation parsing, scenario metadata, cycle-state codecs, scenario-state/report codecs, and malformed decode paths
 - Fixture round-trip tests: `Tests/StayIntegrationTests/WindowRoundTripTests.swift`
 - Separate-spaces policy tests: `Tests/StayIntegrationTests/SeparateSpacesPolicyTests.swift`
+- Screen-configuration observer tests: `Tests/StayIntegrationTests/ScreenConfigurationObserverTests.swift`
 - Real-app scenario tests: `Tests/StayIntegrationTests/RealAppScenarioTests.swift`
 
 ## How to Run
@@ -41,6 +43,12 @@ To run only the separate-spaces suspension coverage:
 
 ```bash
 swift test --filter SeparateSpacesPolicyTests
+```
+
+To run the awake-time display invalidation coverage:
+
+```bash
+swift test --filter 'JSONSnapshotRepositoryTests|ScreenConfigurationObserverTests'
 ```
 
 Wake-cycle scenarios (with real sleep/wake) use the runner executable:
@@ -150,6 +158,7 @@ Scenarios currently automated from `SCENARIOS.md`:
 - two Finder windows, one per screen
 - two non-Finder app windows (TextEdit), one per screen
 - launch-time pause mode when `Displays have separate Spaces` is enabled
+- awake-time display disconnect invalidating stale saved snapshots for that display
 - one TextEdit window on a secondary workspace, restored when that workspace becomes active
 - one full-screen TextEdit window ignored while Finder windows are restored normally
 - FreeCAD main window + child windows (tasks/model/report/python console) across two screens
@@ -195,6 +204,7 @@ Add/expand tests for:
   retrying after `activeSpaceDidChange`
 - full-screen windows being excluded from capture/fallback so restore does not target them
 - separate-spaces launch gating pausing Stay and disabling manual capture/restore
+- awake-time screen-parameter changes invalidating stale persisted display targets
 - untitled multi-window matching using enriched identity (`windowNumber`, role/subrole)
 - Finder-specific capture/restore quirks (Desktop pseudo-window filtering, display-first restore semantics)
 

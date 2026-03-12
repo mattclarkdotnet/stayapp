@@ -9,7 +9,7 @@ protocol ScreenCoordinateServicing {
     func adjustedFrame(_ frame: CGRect, preferredDisplayID: UInt32?) -> CGRect
 }
 
-final class NSScreenCoordinateService: ScreenCoordinateServicing {
+final class NSScreenCoordinateService: ScreenCoordinateServicing, DisplayInventoryReading {
     func displayID(for frame: CGRect) -> UInt32? {
         let screens = NSScreen.screens
         guard !screens.isEmpty else {
@@ -54,6 +54,10 @@ final class NSScreenCoordinateService: ScreenCoordinateServicing {
         }
 
         return clamp(frame: frame, to: screens[0].visibleFrame)
+    }
+
+    func currentDisplayIDs() -> Set<UInt32> {
+        Set(NSScreen.screens.compactMap(displayID(for:)))
     }
 
     private func clamp(frame: CGRect, to visibleFrame: CGRect) -> CGRect {

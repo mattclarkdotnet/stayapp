@@ -13,6 +13,7 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var coordinator: SleepWakeCoordinator?
     private var sleepWakeObserver: SleepWakeObserver?
+    private var screenConfigurationObserver: ScreenConfigurationObserver?
     private var snapshotService: AXWindowSnapshotService?
     private var repository: JSONSnapshotRepository?
     private var statusLine = "Starting"
@@ -41,7 +42,8 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let snapshotService = AXWindowSnapshotService(screenService: NSScreenCoordinateService())
+        let screenService = NSScreenCoordinateService()
+        let snapshotService = AXWindowSnapshotService(screenService: screenService)
         let repository = JSONSnapshotRepository(url: JSONSnapshotRepository.defaultURL())
 
         // Retry window restore until displays are verifiably awake.
@@ -60,6 +62,10 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
         self.repository = repository
         self.coordinator = coordinator
         self.sleepWakeObserver = SleepWakeObserver(coordinator: coordinator)
+        self.screenConfigurationObserver = ScreenConfigurationObserver(
+            repository: repository,
+            displayInventory: screenService
+        )
 
         if AccessibilityPermission.isTrusted(prompt: true) {
             logger.info("Accessibility permission already granted")

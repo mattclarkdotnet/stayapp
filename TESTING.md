@@ -140,6 +140,7 @@ Scope:
 
 - `StayCore` state machine and retry logic (`SleepWakeCoordinator`)
 - pure snapshot-set transforms (`SnapshotSetOperations`) for per-app merge and resolved-snapshot pruning
+- snapshot persistence invalidation for disconnected awake-time displays
 - `WakeCycleScenariosCore` deterministic parsing/serialization helpers
   (`WakeCycleInvocationParser`, `WakeCycleStateCodec`, `ScenarioStateCodec`, `ScenarioReportCodec`, `WakeCycleScenario` metadata)
 - event ordering and idempotency (duplicate wake, wake-before-sleep, repeated sleep)
@@ -167,6 +168,7 @@ Gate:
 Scope:
 
 - launch-time separate-spaces suspension policy
+- awake-time screen-configuration observer wiring
 - real-app capture/restore scenarios without sleep (from `Tests/SCENARIOS.md`)
 - end-to-end app process startup
 - logging and diagnostics behavior
@@ -176,6 +178,7 @@ Scope:
 How:
 
 - run `swift test --filter SeparateSpacesPolicyTests`
+- run `swift test --filter 'JSONSnapshotRepositoryTests|ScreenConfigurationObserverTests'`
 - run `swift test --filter StayIntegrationTests.RealAppScenarioTests`
 - tests launch real apps (Finder/TextEdit/FreeCAD/KiCad), move real windows across screens,
   and for the workspace scenario switch real Mission Control spaces before running capture/restore

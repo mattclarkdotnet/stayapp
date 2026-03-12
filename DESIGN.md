@@ -28,6 +28,7 @@ The app is split into two layers:
 - App lifecycle and menu bar UI (`StayApplicationDelegate`)
 - launch-time separate-spaces policy gate and user notification
 - macOS sleep/wake notification observer
+- awake-time screen-configuration observer for stale snapshot invalidation
 - Accessibility-based window capture/restore service
 - Display mapping and display readiness checks
 
@@ -133,6 +134,21 @@ discarding pending workspace state after a single AX pass.
 
 Why: the safest behavior for this macOS mode is to stay out of the way while still
 making the paused state explicit.
+
+### 6. On awake-time screen configuration change
+
+- `ScreenConfigurationObserver` listens for `NSApplication.didChangeScreenParametersNotification`
+  while Stay is running normally.
+- When the display set changes, Stay queries the currently active display IDs and
+  invalidates persisted snapshots that still target displays no longer present.
+- This trims stale fallback data before later manual restore or `willSleep` merge paths
+  can reuse windows from a display that has already been removed.
+- The current roadmap scope intentionally stops at invalidation: if the same display later
+  reconnects, or a display disappears only during sleep/wake, those behaviors are handled by
+  later roadmap items.
+
+Why: while the app is awake, a missing display is an actual topology change, not a wake-timing
+ambiguity, so the safest baseline is to discard stale targets immediately.
 
 ## Display Readiness Logic
 
@@ -241,6 +257,8 @@ Why: robust matching while keeping implementation simple and lightweight.
 
 - Snapshots are written to:
   - `~/Library/Application Support/Stay/window-layout.json`
+- Awake-time screen-configuration changes may prune persisted snapshots whose saved
+  `screenDisplayID` no longer exists in the live display set.
 - Write failures are non-fatal.
 - In-memory snapshots are still used within the current cycle.
 

@@ -39,6 +39,30 @@ public final class JSONSnapshotRepository: SnapshotRepository {
         }
     }
 
+    /// Removes snapshots whose saved display is no longer present.
+    @discardableResult
+    public func invalidateSnapshots(keepingDisplayIDs activeDisplayIDs: Set<UInt32>) -> Int {
+        let snapshots = load()
+        guard !snapshots.isEmpty else {
+            return 0
+        }
+
+        let filteredSnapshots = snapshots.filter { snapshot in
+            guard let screenDisplayID = snapshot.screenDisplayID else {
+                return true
+            }
+
+            return activeDisplayIDs.contains(screenDisplayID)
+        }
+
+        let removedCount = snapshots.count - filteredSnapshots.count
+        if removedCount > 0 {
+            save(filteredSnapshots)
+        }
+
+        return removedCount
+    }
+
     /// Default snapshot file location inside Application Support.
     public static func defaultURL(appName: String = "Stay", fileManager: FileManager = .default)
         -> URL
