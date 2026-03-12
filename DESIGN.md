@@ -140,9 +140,11 @@ making the paused state explicit.
 - `ScreenConfigurationObserver` listens for `NSApplication.didChangeScreenParametersNotification`
   while Stay is running normally.
 - When the display set changes, Stay queries the currently active display IDs and
-  invalidates persisted snapshots that still target displays no longer present.
+  invalidates persisted snapshots and queued in-memory restore snapshots that still target
+  displays no longer present.
 - This trims stale fallback data before later manual restore or `willSleep` merge paths
-  can reuse windows from a display that has already been removed.
+  can reuse windows from a display that has already been removed, and it prevents an already
+  scheduled restore cycle from continuing to target that removed display.
 - The current roadmap scope intentionally stops at invalidation: if the same display later
   reconnects, or a display disappears only during sleep/wake, those behaviors are handled by
   later roadmap items.

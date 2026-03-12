@@ -141,6 +141,7 @@ Scope:
 - `StayCore` state machine and retry logic (`SleepWakeCoordinator`)
 - pure snapshot-set transforms (`SnapshotSetOperations`) for per-app merge and resolved-snapshot pruning
 - snapshot persistence invalidation for disconnected awake-time displays
+- in-memory pending-restore invalidation for disconnected awake-time displays
 - `WakeCycleScenariosCore` deterministic parsing/serialization helpers
   (`WakeCycleInvocationParser`, `WakeCycleStateCodec`, `ScenarioStateCodec`, `ScenarioReportCodec`, `WakeCycleScenario` metadata)
 - event ordering and idempotency (duplicate wake, wake-before-sleep, repeated sleep)

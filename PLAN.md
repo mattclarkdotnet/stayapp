@@ -1,26 +1,26 @@
-# Plan: Monitor Configuration Changes While Awake
+# Plan: Awake-Time Disconnect And Reconnect Of The Same Display
 
 ## Roadmap alignment
 
-- This plan implements `ROADMAP.md` `Now` by handling the simpler topology-change case first: displays that are added or removed while Stay is already awake.
+- This plan implements `ROADMAP.md` `Now` by handling the next awake-time topology case after stale-target invalidation: the same display disappears and later comes back while Stay is still running.
 
 ## Objective
 
-- Prove the smallest safe awake-time behavior first by invalidating saved snapshot entries for displays that disappear while Stay is running, so later restore attempts cannot use stale placement targets.
+- Prove the smallest correct reconnect behavior first so that when the same display returns while Stay is awake, windows that belonged on it end up back on that display instead of remaining stranded on the fallback display set.
 
 ## Scenario mapping
 
-- A snapshot set contains windows assigned to two displays, then one display disconnects while Stay is awake; snapshot entries targeting the missing display are invalidated before the next restore attempt.
-- A new capture after an awake-time topology change only produces restorable snapshots for displays that are currently present.
-- Awake-time reconnect of the same display and sleep-time topology changes both remain out of scope for this plan and are handled by later roadmap items.
+- A window is saved on a secondary display, that display disconnects while Stay is awake, and the same display reconnects later; Stay restores the window to its original display placement once that display is available again.
+- The baseline invalidation work already completed remains intact: if the display never comes back, stale targets stay invalidated and later restores do not use them.
+- Sleep/wake topology ambiguity and replacement-display behavior remain out of scope for this plan and stay on later roadmap items.
 
 ## Exit criteria
 
-- Stay invalidates snapshot entries for displays that disappear while the app is awake.
-- Later restore attempts do not move windows using stale targets from removed displays.
-- Deterministic automated coverage exists for the awake-time invalidation behavior before production changes are promoted.
-- Relevant docs describe the difference between awake-time invalidation, awake-time reconnect, and sleep/wake topology changes.
+- Stay can distinguish "same display came back while awake" from "display is still absent" well enough to restore windows to their original display once it reconnects.
+- The reconnect behavior has deterministic automated coverage before production changes are promoted.
+- The existing awake-time invalidation baseline remains green and documented.
+- Relevant docs describe the boundary between awake-time reconnect, sleep/wake ambiguity, and replacement-display behavior.
 
 ## Promotion rule
 
-- Promote this plan only after awake-time invalidation behavior is automated first; only then move to the separate sleep/wake roadmap item where missing displays may be temporary.
+- Promote this plan only after the reconnect behavior is automated on top of the existing invalidation baseline; if reconnect identification proves unreliable, stop at the invalidation behavior and capture the gap explicitly.

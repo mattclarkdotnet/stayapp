@@ -159,6 +159,7 @@ Scenarios currently automated from `SCENARIOS.md`:
 - two non-Finder app windows (TextEdit), one per screen
 - launch-time pause mode when `Displays have separate Spaces` is enabled
 - awake-time display disconnect invalidating stale saved snapshots for that display
+- awake-time display disconnect invalidating stale queued restore targets before they run
 - one TextEdit window on a secondary workspace, restored when that workspace becomes active
 - one full-screen TextEdit window ignored while Finder windows are restored normally
 - FreeCAD main window + child windows (tasks/model/report/python console) across two screens
@@ -205,6 +206,7 @@ Add/expand tests for:
 - full-screen windows being excluded from capture/fallback so restore does not target them
 - separate-spaces launch gating pausing Stay and disabling manual capture/restore
 - awake-time screen-parameter changes invalidating stale persisted display targets
+- awake-time screen-parameter changes invalidating stale in-memory pending restore targets
 - untitled multi-window matching using enriched identity (`windowNumber`, role/subrole)
 - Finder-specific capture/restore quirks (Desktop pseudo-window filtering, display-first restore semantics)
 

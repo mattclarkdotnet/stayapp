@@ -205,6 +205,46 @@ public final class SleepWakeCoordinator {
         lock.unlock()
     }
 
+    /// Drops pending restore snapshots whose saved displays are no longer present.
+    @discardableResult
+    public func handleDisplayConfigurationChanged(activeDisplayIDs: Set<UInt32>) -> Int {
+        lock.lock()
+        guard !isSleeping else {
+            lock.unlock()
+            return 0
+        }
+
+        let removedPendingCount = invalidateSnapshots(
+            keepingDisplayIDs: activeDisplayIDs,
+            from: &pendingRestoreSnapshots
+        )
+
+        inactiveWorkspacePendingSnapshots = inactiveWorkspacePendingSnapshots.filter { snapshot in
+            guard let screenDisplayID = snapshot.screenDisplayID else {
+                return true
+            }
+
+            return activeDisplayIDs.contains(screenDisplayID)
+        }
+
+        if removedPendingCount > 0 {
+            logger.info(
+                "Invalidated \(removedPendingCount, privacy: .public) pending snapshot(s) after awake-time display change"
+            )
+
+            if pendingRestoreSnapshots.isEmpty {
+                clearRestoreState()
+            } else if activeWorkspacePendingSnapshots().isEmpty
+                && !inactiveWorkspacePendingSnapshots.isEmpty
+            {
+                enterDeferredEnvironmentWait(requiresActiveSpaceChange: true)
+            }
+        }
+
+        lock.unlock()
+        return removedPendingCount
+    }
+
     private func scheduleRestoreAttempt(after delay: TimeInterval) {
         logger.debug("Scheduling restore attempt in \(delay, privacy: .public)s")
         restoreTask?.cancel()
@@ -504,6 +544,21 @@ public final class SleepWakeCoordinator {
         restoreDeadline = nil
         resetRestoreAttemptTracking()
         clearDeferredExposureWait()
+    }
+
+    private func invalidateSnapshots(
+        keepingDisplayIDs activeDisplayIDs: Set<UInt32>,
+        from snapshots: inout [WindowSnapshot]
+    ) -> Int {
+        let priorCount = snapshots.count
+        snapshots = snapshots.filter { snapshot in
+            guard let screenDisplayID = snapshot.screenDisplayID else {
+                return true
+            }
+
+            return activeDisplayIDs.contains(screenDisplayID)
+        }
+        return priorCount - snapshots.count
     }
 
     private func resetRestoreAttemptTracking() {

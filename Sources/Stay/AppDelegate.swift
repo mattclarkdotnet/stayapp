@@ -64,6 +64,7 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
         self.sleepWakeObserver = SleepWakeObserver(coordinator: coordinator)
         self.screenConfigurationObserver = ScreenConfigurationObserver(
             repository: repository,
+            pendingSnapshotInvalidator: coordinator,
             displayInventory: screenService
         )
 

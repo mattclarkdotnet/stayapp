@@ -144,6 +144,35 @@ struct SleepWakeCoordinatorTests {
         #expect(scheduler.pendingCount == 0)
     }
 
+    @Test("Display change invalidates pending manual-restore snapshots for missing displays")
+    func displayChangeInvalidatesPendingManualRestoreSnapshots() {
+        let first = sampleSnapshot(title: "Primary", index: 0, screenDisplayID: 1)
+        let second = sampleSnapshot(title: "Secondary", index: 1, screenDisplayID: 2)
+
+        let capture = StubCaptureService()
+        let restore = SpyRestoreService()
+        let repository = InMemoryRepository()
+        let scheduler = ManualScheduler()
+
+        let coordinator = SleepWakeCoordinator(
+            capturing: capture,
+            restoring: restore,
+            repository: repository,
+            scheduler: scheduler,
+            wakeDelay: 1
+        )
+
+        coordinator.handleRestoreRequested(with: [first, second])
+        #expect(scheduler.pendingCount == 1)
+
+        let invalidatedCount = coordinator.handleDisplayConfigurationChanged(activeDisplayIDs: [1])
+        #expect(invalidatedCount == 1)
+
+        scheduler.runNext()
+        #expect(restore.calls.count == 1)
+        #expect(restore.calls[0] == [first])
+    }
+
     @Test("Repeated wake events schedule only one restore")
     func repeatedWakeEventsScheduleOnlyOneRestore() {
         let snapshots = [sampleSnapshot(title: "Mail", index: 0)]
@@ -1406,7 +1435,8 @@ struct SleepWakeCoordinatorTests {
         bundleID: String = "com.example.app",
         appName: String = "Example",
         title: String,
-        index: Int
+        index: Int,
+        screenDisplayID: UInt32? = 696_969
     ) -> WindowSnapshot {
         WindowSnapshot(
             appPID: pid,
@@ -1415,7 +1445,7 @@ struct SleepWakeCoordinatorTests {
             windowTitle: title,
             windowIndex: index,
             frame: CodableRect(x: 100, y: 100, width: 1200, height: 800),
-            screenDisplayID: 696_969
+            screenDisplayID: screenDisplayID
         )
     }
 }

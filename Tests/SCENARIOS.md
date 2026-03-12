@@ -96,6 +96,7 @@ And the user's computer has no internal screen
 And Stay has saved window snapshots for both screens
 When `secondary_screen` is disconnected while Stay is awake
 Then Stay should invalidate the saved snapshot entries that targeted `secondary_screen`
+And Stay should invalidate any queued restore work that still targeted `secondary_screen`
 And later restore attempts should not use stale placement targets from the removed screen
 
 ## 2. Scenarios with a full sleep/wake cycle:
