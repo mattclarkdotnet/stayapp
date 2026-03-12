@@ -251,13 +251,14 @@ Real-app no-sleep integration tests in `StayIntegrationTests.RealAppScenarioTest
 
 Wake-cycle integration uses the `WakeCycleScenarios` executable:
 
-- `prepare finder|app|freecad|kicad`: create/position real windows, persist state,
-  optionally sleep the machine
-- `verify finder|app|freecad|kicad`: wait for display readiness, then wait for
+- `prepare finder|app|app-workspace|freecad|kicad`: create/position real windows, persist state,
+  optionally sleep the machine. Scripted scenarios (`finder`, `app`, `app-workspace`) quit any
+  already-running target app first so stale windows cannot leak into a new run.
+- `verify finder|app|app-workspace|freecad|kicad`: wait for display readiness, then wait for
   app/window readiness (tracked windows must be discoverable and matchable), perturb one
   tracked window, run restore attempts, then verify final display+frame alignment
 - `verify ... --check-only`: passive post-wake validation without perturb/restore
-- `cycle finder|app|freecad|kicad`: full-cycle mode for sleep/wake automation
+- `cycle finder|app|app-workspace|freecad|kicad`: full-cycle mode for sleep/wake automation
 
 `cycle` execution model:
 

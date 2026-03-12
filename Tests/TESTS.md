@@ -42,24 +42,27 @@ Wake-cycle scenarios (with real sleep/wake) use the runner executable:
 # Full-cycle automation (preferred):
 swift run WakeCycleScenarios cycle finder
 swift run WakeCycleScenarios cycle app
+swift run WakeCycleScenarios cycle app-workspace
 swift run WakeCycleScenarios cycle freecad
 swift run WakeCycleScenarios cycle kicad
 
 # Manual split flow (debugging):
 swift run WakeCycleScenarios prepare finder
 swift run WakeCycleScenarios verify finder
+swift run WakeCycleScenarios prepare app-workspace
+swift run WakeCycleScenarios verify app-workspace
 ```
 
 Required order for manual split wake-cycle scenarios:
 
-1. Run `prepare` for the scenario (`finder`, `app`, `freecad`, or `kicad`).
+1. Run `prepare` for the scenario (`finder`, `app`, `app-workspace`, `freecad`, or `kicad`).
 2. Let the machine complete the sleep/wake cycle.
 3. Log in after wake.
 4. Run `verify` for the same scenario.
 
 Required order for full-cycle automation:
 
-1. Run `cycle` for the scenario (`finder`, `app`, `freecad`, or `kicad`).
+1. Run `cycle` for the scenario (`finder`, `app`, `app-workspace`, `freecad`, or `kicad`).
 2. Let the machine sleep.
 3. Wake/unlock the machine.
 4. Runner automatically continues with verify and writes the report.
@@ -69,6 +72,7 @@ Optional passive check:
 ```bash
 swift run WakeCycleScenarios verify finder --check-only
 swift run WakeCycleScenarios verify app --check-only
+swift run WakeCycleScenarios verify app-workspace --check-only
 swift run WakeCycleScenarios verify freecad --check-only
 swift run WakeCycleScenarios verify kicad --check-only
 ```
@@ -95,6 +99,7 @@ swift run WakeCycleScenarios verify kicad --check-only
 - Scenario 1.3 uses position-only moves for FreeCAD windows so tool-window sizes are preserved.
 - Running these tests will visibly move windows across screens.
 - Visual confirmation delays are enabled by default; set `STAY_REALAPP_VISUAL_PAUSE=0` to disable them.
+- Scripted Finder/TextEdit real-app scenarios reset their target app before setup.
 - TextEdit, FreeCAD, and KiCad real-app scenarios explicitly quit those apps during cleanup.
 - For wake-cycle scenarios, prefer `cycle`; use `prepare`/`verify` split flow for debugging.
 - `verify` waits for display and app/window readiness first, then perturbs one tracked window, restores, and validates display and frame placement.
@@ -140,6 +145,7 @@ Scenarios currently automated from `SCENARIOS.md`:
 - KiCad main + PCB editor on primary screen, schematic editor on secondary screen
 - full wake/sleep Finder two-window scenario (`WakeCycleScenarios prepare/verify finder`)
 - full wake/sleep app two-window scenario (`WakeCycleScenarios prepare/verify app`)
+- full wake/sleep secondary-workspace TextEdit scenario (`WakeCycleScenarios prepare/verify app-workspace`)
 - full wake/sleep FreeCAD main+child-window scenario (`WakeCycleScenarios prepare/verify freecad`)
 - full wake/sleep KiCad main+PCB+schematic scenario (`WakeCycleScenarios prepare/verify kicad`)
 

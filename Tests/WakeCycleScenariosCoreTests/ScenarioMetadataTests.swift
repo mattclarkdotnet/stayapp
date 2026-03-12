@@ -17,6 +17,13 @@ struct ScenarioMetadataTests {
         #expect(WakeCycleScenario.app.candidateBundleIDs == ["com.apple.TextEdit"])
     }
 
+    @Test("Workspace TextEdit metadata is stable")
+    func appWorkspaceMetadata() {
+        #expect(WakeCycleScenario.appWorkspace.appName == "TextEdit")
+        #expect(WakeCycleScenario.appWorkspace.bundleID == "com.apple.TextEdit")
+        #expect(WakeCycleScenario.appWorkspace.candidateBundleIDs == ["com.apple.TextEdit"])
+    }
+
     @Test("FreeCAD metadata includes both known bundle IDs")
     func freecadMetadata() {
         #expect(WakeCycleScenario.freecad.appName == "FreeCAD")

@@ -5,6 +5,78 @@ import Foundation
 // Design intent: keep app resolution and live-window discovery logic separate
 // from scenario orchestration code paths.
 extension WakeCycleScenarioRunner {
+    // Scripted scenarios create their own windows, so they must start from a
+    // clean app state instead of inheriting stale windows from earlier runs.
+    func resetScenarioAppStateIfSupported(scenario: Scenario) throws {
+        switch scenario {
+        case .finder, .app, .appWorkspace:
+            try quitRunningApplications(bundleIDs: scenario.candidateBundleIDs)
+        case .freecad, .kicad:
+            return
+        }
+    }
+
+    func quitRunningApplications(bundleIDs: [String]) throws {
+        let running = NSWorkspace.shared.runningApplications.filter { app in
+            !app.isTerminated && bundleIDs.contains(app.bundleIdentifier ?? "")
+        }
+
+        guard !running.isEmpty else {
+            return
+        }
+
+        for app in running {
+            if let bundleID = app.bundleIdentifier {
+                _ = runAppleScript("tell application id \"\(bundleID)\" to quit")
+            } else {
+                _ = app.terminate()
+            }
+        }
+
+        guard
+            waitUntil(
+                timeout: 5,
+                condition: {
+                    NSWorkspace.shared.runningApplications.allSatisfy { app in
+                        app.isTerminated || !bundleIDs.contains(app.bundleIdentifier ?? "")
+                    }
+                })
+        else {
+            for app in running where !app.isTerminated {
+                _ = app.terminate()
+            }
+
+            guard
+                waitUntil(
+                    timeout: 3,
+                    condition: {
+                        NSWorkspace.shared.runningApplications.allSatisfy { app in
+                            app.isTerminated || !bundleIDs.contains(app.bundleIdentifier ?? "")
+                        }
+                    })
+            else {
+                for app in running where !app.isTerminated {
+                    _ = app.forceTerminate()
+                }
+
+                guard
+                    waitUntil(
+                        timeout: 2,
+                        condition: {
+                            NSWorkspace.shared.runningApplications.allSatisfy { app in
+                                app.isTerminated || !bundleIDs.contains(app.bundleIdentifier ?? "")
+                            }
+                        })
+                else {
+                    throw RunnerError.failed(
+                        "failed to reset app state for \(bundleIDs.joined(separator: ", "))")
+                }
+                return
+            }
+            return
+        }
+    }
+
     func ensureAppsRunning(bundleIDs: [String]) throws -> [Int32] {
         try bundleIDs.map(ensureAppRunning(bundleID:))
     }

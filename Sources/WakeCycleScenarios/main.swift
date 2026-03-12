@@ -130,9 +130,9 @@ struct WakeCycleScenarioRunner {
         print(
             """
             Usage:
-              swift run WakeCycleScenarios prepare <finder|app|freecad|kicad> [--no-sleep]
-              swift run WakeCycleScenarios verify <finder|app|freecad|kicad> [--check-only]
-              swift run WakeCycleScenarios cycle <finder|app|freecad|kicad>
+              swift run WakeCycleScenarios prepare <finder|app|app-workspace|freecad|kicad> [--no-sleep]
+              swift run WakeCycleScenarios verify <finder|app|app-workspace|freecad|kicad> [--check-only]
+              swift run WakeCycleScenarios cycle <finder|app|app-workspace|freecad|kicad>
 
             Notes:
               - Requires exactly two external displays and no built-in display.

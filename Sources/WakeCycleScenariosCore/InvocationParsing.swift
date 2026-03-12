@@ -12,6 +12,7 @@ public enum WakeCycleCommand: String, Codable, Equatable, Sendable {
 public enum WakeCycleScenario: String, Codable, Equatable, Sendable {
     case finder
     case app
+    case appWorkspace = "app-workspace"
     case freecad
     case kicad
 }

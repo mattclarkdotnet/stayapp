@@ -27,6 +27,18 @@ struct InvocationParsingTests {
         #expect(invocation.checkOnly == true)
     }
 
+    @Test("Cycle parses workspace app scenario")
+    func cycleWorkspaceScenario() throws {
+        let invocation = try WakeCycleInvocationParser.parse(arguments: [
+            "WakeCycleScenarios", "cycle", "app-workspace",
+        ])
+
+        #expect(invocation.command == .cycle)
+        #expect(invocation.scenario == .appWorkspace)
+        #expect(invocation.shouldSleep == false)
+        #expect(invocation.checkOnly == false)
+    }
+
     @Test("Usage error when args are missing")
     func usageError() {
         #expect(throws: WakeCycleInvocationParseError.usage) {

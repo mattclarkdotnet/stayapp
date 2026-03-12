@@ -100,6 +100,9 @@ extension WakeCycleScenarioRunner {
                 [fileOne.lastPathComponent.lowercased(), fileTwo.lastPathComponent.lowercased()],
                 [fileOne.path, fileTwo.path]
             )
+        case .appWorkspace:
+            throw RunnerError.failed(
+                "workspace app scenario uses explicit workspace preparation flow")
         case .freecad:
             throw RunnerError.failed(
                 "FreeCAD scenario uses explicit window selection, not scripted creation")

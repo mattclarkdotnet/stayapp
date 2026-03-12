@@ -387,7 +387,7 @@ extension WakeCycleScenarioRunner {
         case .finder:
             // Finder can snap by a few points after cross-display moves.
             return (position: 8, size: 12)
-        case .app:
+        case .app, .appWorkspace:
             return (position: 4, size: 6)
         case .freecad:
             return (position: 8, size: 8)

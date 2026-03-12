@@ -96,6 +96,7 @@ struct RealAppScenarioTests {
         guard let displays = validatedTwoExternalDisplays() else {
             return
         }
+        resetScriptedScenarioAppState(bundleIDs: [bundleID])
         let screenOne = displays[0].screen
         let screenTwo = displays[1].screen
         let displayOneID = displays[0].id
@@ -244,11 +245,12 @@ struct RealAppScenarioTests {
         guard let displays = validatedTwoExternalDisplays() else {
             return
         }
+        let textEditBundleID = "com.apple.TextEdit"
+        resetScriptedScenarioAppState(bundleIDs: [textEditBundleID])
         let primaryScreen = displays[0].screen
         let secondaryScreen = displays[1].screen
         let primaryDisplayID = displays[0].id
         let secondaryDisplayID = displays[1].id
-        let textEditBundleID = "com.apple.TextEdit"
 
         _ = switchWorkspace(.left)
         pauseForVisualConfirmation(duration: 0.5)
@@ -1467,6 +1469,14 @@ struct RealAppScenarioTests {
     private func quitApps(_ apps: [(bundleID: String, pid: Int32)]) {
         for app in apps {
             quitApp(bundleID: app.bundleID, pid: app.pid)
+        }
+    }
+
+    private func resetScriptedScenarioAppState(bundleIDs: [String]) {
+        for bundleID in bundleIDs {
+            while let app = runningApplication(bundleID: bundleID) {
+                quitApp(bundleID: bundleID, pid: app.processIdentifier)
+            }
         }
     }
 

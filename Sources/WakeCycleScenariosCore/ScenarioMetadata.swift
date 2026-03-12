@@ -13,6 +13,8 @@ extension WakeCycleScenario {
             return ["com.apple.finder"]
         case .app:
             return ["com.apple.TextEdit"]
+        case .appWorkspace:
+            return ["com.apple.TextEdit"]
         case .freecad:
             return ["org.freecad.FreeCAD", "org.freecadweb.FreeCAD"]
         case .kicad:
@@ -26,6 +28,8 @@ extension WakeCycleScenario {
         case .finder:
             return "Finder"
         case .app:
+            return "TextEdit"
+        case .appWorkspace:
             return "TextEdit"
         case .freecad:
             return "FreeCAD"

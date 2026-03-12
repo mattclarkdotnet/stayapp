@@ -6,10 +6,20 @@ import Foundation
 extension WakeCycleScenarioRunner {
     func prepare(scenario: Scenario, shouldSleep: Bool) throws {
         try ensurePrerequisites()
+        try resetScenarioAppStateIfSupported(scenario: scenario)
         let displays = try validatedExternalDisplays()
 
         if scenario == .kicad {
             try prepareKiCadScenario(
+                scenario: scenario,
+                displays: displays,
+                shouldSleep: shouldSleep
+            )
+            return
+        }
+
+        if scenario == .appWorkspace {
+            try prepareAppWorkspaceScenario(
                 scenario: scenario,
                 displays: displays,
                 shouldSleep: shouldSleep
@@ -362,6 +372,16 @@ extension WakeCycleScenarioRunner {
         } else {
             try ensurePrerequisites()
         }
+
+        if scenario == .appWorkspace {
+            try verifyAppWorkspaceScenario(
+                scenario: scenario,
+                checkOnly: checkOnly,
+                timings: timings
+            )
+            return
+        }
+
         let displays = try validatedExternalDisplays()
         let state = try loadState(from: stateURL(for: scenario))
 
