@@ -18,6 +18,7 @@ Automated tests cover two layers:
 - Direct-distribution script tests: `Tests/StayIntegrationTests/DirectDistributionScriptTests.swift`
 - Default launch-at-login tests: `Tests/StayIntegrationTests/DefaultLaunchAtLoginEnablerTests.swift`
 - Launch-at-login tests: `Tests/StayIntegrationTests/LaunchAtLoginControllerTests.swift`
+- Advanced menu tests: `Tests/StayIntegrationTests/AdvancedMenuPresentationTests.swift`
 - Menu presentation tests: `Tests/StayIntegrationTests/StayMenuPresentationTests.swift`
 - Fixture round-trip tests: `Tests/StayIntegrationTests/WindowRoundTripTests.swift`
 - Restore availability tests: `Tests/StayIntegrationTests/AXWindowSnapshotServiceTests.swift`
@@ -85,6 +86,12 @@ To run the default launch-at-login coverage:
 
 ```bash
 swift test --filter DefaultLaunchAtLoginEnablerTests
+```
+
+To run the advanced-menu coverage:
+
+```bash
+swift test --filter AdvancedMenuPresentationTests
 ```
 
 To run the launch-at-login coverage:
@@ -228,6 +235,7 @@ Scenarios currently automated from `SCENARIOS.md`:
 - checked-in app-bundle metadata remaining aligned with the intended `Stay.app` identity
 - checked-in direct-distribution scripts remaining aligned with the intended notarized-download release path
 - first installed launch defaulting login-item registration on without re-enabling after later user opt-out
+- advanced menu structure keeping manual actions grouped and exposing the latest persisted snapshot contents
 - menu-bar status presentation showing explicit ready/paused state with the installed icon metadata
 - one TextEdit window on a secondary workspace, restored when that workspace becomes active
 - one full-screen TextEdit window ignored while Finder windows are restored normally

@@ -148,6 +148,10 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
             statusDetail: statusLine,
             isPaused: isPausedForSeparateSpaces
         )
+        let advancedPresentation = AdvancedMenuPresentation(
+            isPaused: isPausedForSeparateSpaces,
+            snapshots: repository?.load() ?? []
+        )
 
         let stateItem = NSMenuItem(title: presentation.stateTitle, action: nil, keyEquivalent: "")
         stateItem.isEnabled = false
@@ -186,20 +190,7 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
-        let captureItem = makeMenuItem(
-            title: "Capture Layout Now",
-            action: #selector(captureLayoutNow),
-            key: "c"
-        )
-        captureItem.isEnabled = !isPausedForSeparateSpaces
-        menu.addItem(captureItem)
-        let restoreItem = makeMenuItem(
-            title: "Restore Layout Now",
-            action: #selector(restoreLayoutNow),
-            key: "r"
-        )
-        restoreItem.isEnabled = !isPausedForSeparateSpaces
-        menu.addItem(restoreItem)
+        menu.addItem(makeAdvancedMenu(presentation: advancedPresentation))
         menu.addItem(.separator())
         menu.addItem(makeMenuItem(title: "Quit Stay", action: #selector(quit), key: "q"))
 
@@ -211,6 +202,50 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
     private func makeMenuItem(title: String, action: Selector, key: String) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.target = self
+        return item
+    }
+
+    private func makeDisabledMenuItem(title: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
+    }
+
+    private func makeAdvancedMenu(presentation: AdvancedMenuPresentation) -> NSMenuItem {
+        let item = NSMenuItem(title: "Advanced", action: nil, keyEquivalent: "")
+        let submenu = NSMenu(title: "Advanced")
+
+        let captureItem = makeMenuItem(
+            title: "Capture Layout Now",
+            action: #selector(captureLayoutNow),
+            key: "c"
+        )
+        captureItem.isEnabled = presentation.isManualCaptureEnabled
+        submenu.addItem(captureItem)
+
+        let restoreItem = makeMenuItem(
+            title: "Restore Layout Now",
+            action: #selector(restoreLayoutNow),
+            key: "r"
+        )
+        restoreItem.isEnabled = presentation.isManualRestoreEnabled
+        submenu.addItem(restoreItem)
+
+        submenu.addItem(.separator())
+
+        let latestSnapshotItem = NSMenuItem(
+            title: presentation.latestSnapshotItemTitle,
+            action: nil,
+            keyEquivalent: ""
+        )
+        let latestSnapshotSubmenu = NSMenu(title: presentation.latestSnapshotItemTitle)
+        for entry in presentation.latestSnapshotEntries {
+            latestSnapshotSubmenu.addItem(makeDisabledMenuItem(title: entry))
+        }
+        latestSnapshotItem.submenu = latestSnapshotSubmenu
+        submenu.addItem(latestSnapshotItem)
+
+        item.submenu = submenu
         return item
     }
 

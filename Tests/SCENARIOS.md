@@ -115,6 +115,14 @@ And launches Stay from that installed app bundle
 Then Stay should enter the same menu-bar-only flow as the development executable
 And Stay should not depend on the transient SwiftPM build path to be launchable
 
+### Scenario 1.11: Menu bar advanced tools and latest snapshot
+Given that Stay is running from an installed app bundle
+And Stay has a most recently saved snapshot
+When the user opens the Stay menu
+Then the menu should show an explicit `Status: Ready` or `Status: Paused`
+And manual `Capture Layout Now` and `Restore Layout Now` actions should appear under `Advanced`
+And `Advanced` should expose `Latest Snapshot` as a list of the saved windows from the most recent snapshot
+
 ## 2. Scenarios with a full sleep/wake cycle:
 ### Scenario 2.1: 2 finder windows
 Given that the user has two external screens (`screen_1` and `screen_2`)

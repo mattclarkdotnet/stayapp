@@ -27,6 +27,7 @@ The app is split into two layers:
 2. `Stay` (macOS integration)
 - App lifecycle and menu bar UI (`StayApplicationDelegate`)
 - pure menu-presentation mapping for icon/state/detail display (`StayMenuPresentation`)
+- pure advanced-menu mapping for manual tools and snapshot summaries (`AdvancedMenuPresentation`)
 - one-time default login-item policy for installed launches (`DefaultLaunchAtLoginEnabler`)
 - launch-time separate-spaces policy gate and user notification
 - macOS sleep/wake notification observer
@@ -168,6 +169,11 @@ discarding pending workspace state after a single AX pass.
 - Stay does not create a `SleepWakeCoordinator` or `SleepWakeObserver`, so it does not
   capture on sleep or restore on wake.
 - Manual menu actions remain visible for discoverability but are disabled.
+- Manual capture and restore live under an `Advanced` submenu so the primary menu
+  surface can focus on status and settings rather than power-user operations.
+- `Advanced` also exposes `Latest Snapshot` as a read-only submenu listing the
+  windows in the most recently persisted snapshot, giving the user a quick way to
+  inspect what Stay believes it saved without opening files or logs.
 - The menu's top state remains explicit while paused: Stay shows `Status: Paused`
   alongside the pause detail so the user does not have to infer that from a
   one-time notification or missing restore behavior.
