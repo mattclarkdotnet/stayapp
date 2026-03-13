@@ -2,3 +2,4 @@
 .DS_Store
 dist/
 RESTART_CONTEXT.md
+Scripts/env.sh
