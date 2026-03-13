@@ -11,6 +11,7 @@ Automated tests cover two layers:
 
 - Core tests: `Tests/StayCoreTests/SleepWakeCoordinatorTests.swift`
 - Core helper tests: `Tests/StayCoreTests/SnapshotSetOperationsTests.swift`
+- Stay process identity tests: `Tests/StayCoreTests/StayProcessIdentityTests.swift`
 - Persistence invalidation tests: `Tests/StayCoreTests/JSONSnapshotRepositoryTests.swift`
 - Wake-cycle core tests: `Tests/WakeCycleScenariosCoreTests/*`
 - Wake-cycle core coverage includes invocation parsing, scenario metadata, cycle-state codecs, scenario-state/report codecs, and malformed decode paths
@@ -36,6 +37,12 @@ To run deterministic wake-cycle parser/state tests only:
 
 ```bash
 swift test --filter WakeCycleScenariosCoreTests
+```
+
+To run the Stay process identity coverage:
+
+```bash
+swift test --filter StayProcessIdentityTests
 ```
 
 To run only the real-app scenarios:
@@ -161,6 +168,7 @@ Guided awake-time display-disconnect/reconnect QA:
 2. Disconnect the secondary display when prompted.
 3. Reconnect the same secondary display when prompted.
 4. The runner handles window setup, snapshot creation, invalidation verification, reconnect verification, and cleanup.
+5. The runner terminates any already-running `Stay` instance before it starts and again when it finishes.
 
 ## Full-Cycle Automation Behavior
 

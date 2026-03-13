@@ -1,11 +1,42 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import StayCore
 import WakeCycleScenariosCore
 
 // Design intent: keep scenario orchestration readable by isolating runner-wide
 // support concerns (polling, persistence, scripting, process invocation).
 extension WakeCycleScenarioRunner {
+    func terminateAllStayProcesses() {
+        for app in matchingStayApplications() {
+            _ = app.terminate()
+        }
+
+        let terminatedGracefully = waitUntil(timeout: 3.0) {
+            self.matchingStayApplications().isEmpty
+        }
+
+        if !terminatedGracefully {
+            for app in matchingStayApplications() {
+                _ = app.forceTerminate()
+            }
+        }
+
+        _ = runCommand("/usr/bin/pkill", ["-x", StayProcessIdentity.executableName])
+    }
+
+    func matchingStayApplications() -> [NSRunningApplication] {
+        NSWorkspace.shared.runningApplications.filter { app in
+            StayProcessIdentity.matches(
+                RunningProcessDescriptor(
+                    localizedName: app.localizedName,
+                    bundleIdentifier: app.bundleIdentifier,
+                    executableName: app.executableURL?.lastPathComponent
+                )
+            )
+        }
+    }
+
     func waitUntil(timeout: TimeInterval, poll: TimeInterval = 0.1, condition: () -> Bool) -> Bool {
         if condition() {
             return true
@@ -81,12 +112,8 @@ extension WakeCycleScenarioRunner {
             .appendingPathComponent("Stay", isDirectory: false)
     }
 
-    func startStayIfNeeded() throws -> Process? {
-        if isStayProcessRunning() {
-            print("Using existing Stay process.")
-            return nil
-        }
-
+    func startFreshStayProcess() throws -> Process {
+        terminateAllStayProcesses()
         let executableURL = stayExecutableURL()
         guard fileManager.fileExists(atPath: executableURL.path) else {
             throw RunnerError.failed("could not find Stay executable at \(executableURL.path)")
@@ -115,22 +142,6 @@ extension WakeCycleScenarioRunner {
             return
         }
         process.terminate()
-    }
-
-    func isStayProcessRunning() -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        process.arguments = ["-x", "Stay"]
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0
-        } catch {
-            return false
-        }
     }
 
     func escaped(_ value: String) -> String {

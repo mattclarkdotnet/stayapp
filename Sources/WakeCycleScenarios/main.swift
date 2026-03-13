@@ -81,6 +81,11 @@ struct WakeCycleScenarioRunner {
     }
 
     mutating func run() -> Int32 {
+        terminateAllStayProcesses()
+        defer {
+            terminateAllStayProcesses()
+        }
+
         let invocation: WakeCycleInvocation
         do {
             invocation = try WakeCycleInvocationParser.parse(arguments: args)

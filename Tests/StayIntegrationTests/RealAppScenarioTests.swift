@@ -38,53 +38,73 @@ struct RealAppScenarioTests {
 
     @Test("Scenario 1: two Finder windows restore to original screens")
     func finderTwoWindowScenario() {
-        runTwoWindowScenario(
-            bundleID: "com.apple.finder",
-            createWindowsScript: """
-                tell application id "com.apple.finder"
-                    activate
-                    make new Finder window to (path to home folder)
-                    make new Finder window to (path to home folder)
-                end tell
-                """
-        )
+        runWithCleanStayEnvironment {
+            runTwoWindowScenario(
+                bundleID: "com.apple.finder",
+                createWindowsScript: """
+                    tell application id "com.apple.finder"
+                        activate
+                        make new Finder window to (path to home folder)
+                        make new Finder window to (path to home folder)
+                    end tell
+                    """
+            )
+        }
     }
 
     @Test("Scenario 2: two non-Finder app windows restore to original screens")
     func textEditTwoWindowScenario() {
-        runTwoWindowScenario(
-            bundleID: "com.apple.TextEdit",
-            quitAppAfterScenario: true,
-            createWindowsScript: """
-                tell application id "com.apple.TextEdit"
-                    activate
-                    make new document
-                    make new document
-                end tell
-                """
-        )
+        runWithCleanStayEnvironment {
+            runTwoWindowScenario(
+                bundleID: "com.apple.TextEdit",
+                quitAppAfterScenario: true,
+                createWindowsScript: """
+                    tell application id "com.apple.TextEdit"
+                        activate
+                        make new document
+                        make new document
+                    end tell
+                    """
+            )
+        }
     }
 
     @Test("Scenario 3: FreeCAD main window and child windows restore to original screens")
     func freeCADChildWindowsScenario() {
-        runFreeCADChildWindowScenario()
+        runWithCleanStayEnvironment {
+            runFreeCADChildWindowScenario()
+        }
     }
 
     @Test("Scenario 4: KiCad main+PCB on primary and schematic on secondary restore correctly")
     func kicadMainPcbPrimarySchematicSecondaryScenario() {
-        runKiCadMainPcbPrimarySchematicSecondaryScenario()
+        runWithCleanStayEnvironment {
+            runKiCadMainPcbPrimarySchematicSecondaryScenario()
+        }
     }
 
     @Test(
         "Scenario 5: TextEdit window on secondary workspace restores when that workspace becomes active"
     )
     func textEditSecondaryWorkspaceScenario() {
-        runTextEditSecondaryWorkspaceScenario()
+        runWithCleanStayEnvironment {
+            runTextEditSecondaryWorkspaceScenario()
+        }
     }
 
     @Test("Scenario 6: full-screen app is ignored during capture/restore")
     func fullScreenAppIsIgnoredScenario() {
-        runFullScreenAppIgnoredScenario()
+        runWithCleanStayEnvironment {
+            runFullScreenAppIgnoredScenario()
+        }
+    }
+
+    private func runWithCleanStayEnvironment(_ body: () -> Void) {
+        terminateAllStayProcesses()
+        defer {
+            terminateAllStayProcesses()
+        }
+        body()
     }
 
     private func runTwoWindowScenario(
@@ -1820,6 +1840,51 @@ struct RealAppScenarioTests {
         NSWorkspace.shared.runningApplications.first(where: {
             !$0.isTerminated && $0.bundleIdentifier == bundleID
         })
+    }
+
+    private func terminateAllStayProcesses() {
+        for app in matchingStayApplications() {
+            _ = app.terminate()
+        }
+
+        let terminatedGracefully = waitUntil(timeout: 3.0) {
+            self.matchingStayApplications().isEmpty
+        }
+
+        if !terminatedGracefully {
+            for app in matchingStayApplications() {
+                _ = app.forceTerminate()
+            }
+        }
+
+        _ = runCommand("/usr/bin/pkill", ["-x", StayProcessIdentity.executableName])
+    }
+
+    private func matchingStayApplications() -> [NSRunningApplication] {
+        NSWorkspace.shared.runningApplications.filter { app in
+            StayProcessIdentity.matches(
+                RunningProcessDescriptor(
+                    localizedName: app.localizedName,
+                    bundleIdentifier: app.bundleIdentifier,
+                    executableName: app.executableURL?.lastPathComponent
+                )
+            )
+        }
+    }
+
+    @discardableResult
+    private func runCommand(_ launchPath: String, _ arguments: [String]) -> Int32 {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: launchPath)
+        process.arguments = arguments
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus
+        } catch {
+            return 1
+        }
     }
 
     private struct LiveWindow {

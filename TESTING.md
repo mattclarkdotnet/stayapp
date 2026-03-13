@@ -178,6 +178,7 @@ Scope:
 - post-wake restore deferring windows whose saved display is still unavailable
 - bundle metadata and bundle staging/install scripts
 - direct-distribution script alignment
+- runner cleanup of stray `Stay` processes before and after real-app and wake-cycle test flows
 - launch-at-login state/control logic for installed app bundles
 - notarization-ready signing and stapling workflow for Developer ID builds
 - real-app capture/restore scenarios without sleep (from `Tests/SCENARIOS.md`)
@@ -192,6 +193,7 @@ How:
 - run `swift test --filter StayMenuPresentationTests`
 - run `swift test --filter DefaultLaunchAtLoginEnablerTests`
 - run `swift test --filter AdvancedMenuPresentationTests`
+- run `swift test --filter StayProcessIdentityTests`
 - run `swift test --filter 'JSONSnapshotRepositoryTests|ScreenConfigurationObserverTests'`
 - run `swift test --filter AXWindowSnapshotServiceTests`
 - run `swift test --filter BundleMetadataTests`
@@ -209,6 +211,9 @@ How:
   out of the restorable snapshot set while normal Finder restore still succeeds
 - scripted Finder/TextEdit scenarios reset the target app before setup so stale windows do not
   carry across repeated runs
+- real-app scenarios and `WakeCycleScenarios` terminate any already-running `Stay`
+  processes before they begin and again when they finish, so a stray menu-bar instance
+  cannot interfere with restore assertions
 - use logs (`log stream --predicate 'subsystem == "net.mattclark.stay"'`) when investigating failures
 - for full sleep/wake scenarios, prefer single-command cycle mode:
   1. `swift run WakeCycleScenarios cycle finder|app|app-workspace|freecad|kicad`

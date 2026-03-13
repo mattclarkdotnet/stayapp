@@ -94,9 +94,10 @@ extension WakeCycleScenarioRunner {
         )
 
         try persistState(state, to: stateURL(for: scenario))
-        let startedStayProcess = try startStayIfNeeded()
+        let startedStayProcess = try startFreshStayProcess()
         defer {
             terminateStartedStayProcess(startedStayProcess)
+            terminateAllStayProcesses()
         }
 
         let repository = JSONSnapshotRepository(url: JSONSnapshotRepository.defaultURL())
