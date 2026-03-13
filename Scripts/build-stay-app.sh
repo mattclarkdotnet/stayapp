@@ -13,6 +13,7 @@ MARKETING_VERSION=${MARKETING_VERSION:-0.1.0}
 CURRENT_PROJECT_VERSION=${CURRENT_PROJECT_VERSION:-1}
 PRODUCT_BUNDLE_IDENTIFIER=${PRODUCT_BUNDLE_IDENTIFIER:-net.mattclark.stay}
 ASSET_CATALOG_SOURCE="$ROOT_DIR/AppBundle/Assets.xcassets"
+ACTOOL_INFO_PLIST="$BUILD_ROOT/actool-info.plist"
 
 if [[ ! -f "$INFO_PLIST_SOURCE" ]]; then
   echo "Missing Info.plist template at $INFO_PLIST_SOURCE" >&2
@@ -47,6 +48,7 @@ if [[ -d "$ASSET_CATALOG_SOURCE" ]] && command -v xcrun >/dev/null 2>&1; then
   xcrun actool "$ASSET_CATALOG_SOURCE" \
     --compile "$APP_BUNDLE/Contents/Resources" \
     --output-format human-readable-text \
+    --output-partial-info-plist "$ACTOOL_INFO_PLIST" \
     --notices \
     --warnings \
     --app-icon AppIcon \
@@ -56,6 +58,8 @@ if [[ -d "$ASSET_CATALOG_SOURCE" ]] && command -v xcrun >/dev/null 2>&1; then
     --platform macosx \
     --bundle-identifier "$PRODUCT_BUNDLE_IDENTIFIER" \
     >/dev/null
+
+  rm -f "$ACTOOL_INFO_PLIST"
 fi
 
 if command -v codesign >/dev/null 2>&1; then

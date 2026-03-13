@@ -12,6 +12,7 @@ struct DirectDistributionScriptTests {
                 "PRODUCT_BUNDLE_IDENTIFIER=${PRODUCT_BUNDLE_IDENTIFIER:-net.mattclark.stay}"))
         #expect(script.contains("ASSET_CATALOG_SOURCE=\"$ROOT_DIR/AppBundle/Assets.xcassets\""))
         #expect(script.contains("xcrun actool"))
+        #expect(script.contains("--output-partial-info-plist \"$ACTOOL_INFO_PLIST\""))
         #expect(script.contains("codesign"))
     }
 
