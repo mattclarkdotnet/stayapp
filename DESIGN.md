@@ -27,6 +27,7 @@ The app is split into two layers:
 2. `Stay` (macOS integration)
 - App lifecycle and menu bar UI (`StayApplicationDelegate`)
 - pure menu-presentation mapping for icon/state/detail display (`StayMenuPresentation`)
+- one-time default login-item policy for installed launches (`DefaultLaunchAtLoginEnabler`)
 - launch-time separate-spaces policy gate and user notification
 - macOS sleep/wake notification observer
 - awake-time screen-configuration observer for snapshot suspension and same-display reconnect restore
@@ -72,6 +73,8 @@ then a repeatable notarization path, before release artifacts can be shared safe
 - The status item presents Stay with an icon-first menu-bar button rather than a
   text label, so the installed app behaves like a normal macOS menu-bar utility.
 - `StayApplicationDelegate` first reads `com.apple.spaces` `spans-displays`.
+- On the first real installed launch, Stay enables `Launch At Login` by default
+  and records that one-time policy decision so later user opt-out is preserved.
 - If `Displays have separate Spaces` is enabled, Stay:
   - does not start sleep/wake capture or restore services
   - disables manual capture/restore menu actions
@@ -88,6 +91,8 @@ that Stay's intervention is more likely to interfere than help.
 The setting also requires a full logout/login cycle before the live Space topology updates,
 so Stay does not need to monitor it dynamically after launch; the app will be relaunched
 under the newly applied setting.
+The launch-at-login default is also applied only once for a real installed bundle, so
+product defaults can be sensible without repeatedly overriding later user preference.
 
 ### 2. On `willSleep`
 

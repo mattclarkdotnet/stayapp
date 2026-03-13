@@ -11,6 +11,7 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
     private let separateSpacesPolicy: SeparateSpacesSuspensionPolicy
     private let notifierFactory: () -> any StayUserNotifying
     private let launchAtLoginController: any LaunchAtLoginControlling
+    private let launchAtLoginDefaults: any LaunchAtLoginPreferenceStoring
     private var statusItem: NSStatusItem?
     private var coordinator: SleepWakeCoordinator?
     private var sleepWakeObserver: SleepWakeObserver?
@@ -25,19 +26,42 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
         separateSpacesPreferenceReader: any SeparateSpacesPreferenceReading =
             MacOSSeparateSpacesPreferenceReader(),
         notifierFactory: @escaping () -> any StayUserNotifying = { StayUserNotificationCenter() },
-        launchAtLoginController: any LaunchAtLoginControlling = LaunchAtLoginController()
+        launchAtLoginController: any LaunchAtLoginControlling = LaunchAtLoginController(),
+        launchAtLoginDefaults: any LaunchAtLoginPreferenceStoring = UserDefaults.standard
     ) {
         self.separateSpacesPolicy = SeparateSpacesSuspensionPolicy(
             preferenceReader: separateSpacesPreferenceReader)
         self.notifierFactory = notifierFactory
         self.launchAtLoginController = launchAtLoginController
+        self.launchAtLoginDefaults = launchAtLoginDefaults
         super.init()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         logger.info("Application did finish launching")
         configureStatusItem()
+        configureDefaultLaunchAtLoginIfNeeded()
         startServices()
+    }
+
+    private func configureDefaultLaunchAtLoginIfNeeded() {
+        let enabler = DefaultLaunchAtLoginEnabler(
+            controller: launchAtLoginController,
+            preferences: launchAtLoginDefaults
+        )
+
+        do {
+            switch try enabler.configureIfNeeded() {
+            case .enabledByDefault:
+                logger.info("Launch at login enabled by default on first installed launch")
+            case .alreadyConfigured, .unavailable:
+                break
+            }
+        } catch {
+            logger.error(
+                "Default launch-at-login enable failed: \(String(describing: error), privacy: .public)"
+            )
+        }
     }
 
     private func startServices() {

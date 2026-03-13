@@ -171,6 +171,7 @@ Scope:
 
 - launch-time separate-spaces suspension policy
 - menu-bar presentation state and icon metadata
+- first-launch default launch-at-login policy
 - awake-time screen-configuration observer wiring
 - awake-time same-display disconnect/reconnect restore behavior
 - post-wake restore deferring windows whose saved display is still unavailable
@@ -188,6 +189,7 @@ How:
 
 - run `swift test --filter SeparateSpacesPolicyTests`
 - run `swift test --filter StayMenuPresentationTests`
+- run `swift test --filter DefaultLaunchAtLoginEnablerTests`
 - run `swift test --filter 'JSONSnapshotRepositoryTests|ScreenConfigurationObserverTests'`
 - run `swift test --filter AXWindowSnapshotServiceTests`
 - run `swift test --filter BundleMetadataTests`

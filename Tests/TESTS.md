@@ -16,6 +16,7 @@ Automated tests cover two layers:
 - Wake-cycle core coverage includes invocation parsing, scenario metadata, cycle-state codecs, scenario-state/report codecs, and malformed decode paths
 - Bundle metadata tests: `Tests/StayIntegrationTests/BundleMetadataTests.swift`
 - Direct-distribution script tests: `Tests/StayIntegrationTests/DirectDistributionScriptTests.swift`
+- Default launch-at-login tests: `Tests/StayIntegrationTests/DefaultLaunchAtLoginEnablerTests.swift`
 - Launch-at-login tests: `Tests/StayIntegrationTests/LaunchAtLoginControllerTests.swift`
 - Menu presentation tests: `Tests/StayIntegrationTests/StayMenuPresentationTests.swift`
 - Fixture round-trip tests: `Tests/StayIntegrationTests/WindowRoundTripTests.swift`
@@ -78,6 +79,12 @@ To run the direct-distribution script coverage:
 
 ```bash
 swift test --filter DirectDistributionScriptTests
+```
+
+To run the default launch-at-login coverage:
+
+```bash
+swift test --filter DefaultLaunchAtLoginEnablerTests
 ```
 
 To run the launch-at-login coverage:
@@ -220,6 +227,7 @@ Scenarios currently automated from `SCENARIOS.md`:
 - post-wake missing-display snapshots staying deferred instead of being remapped to an available screen
 - checked-in app-bundle metadata remaining aligned with the intended `Stay.app` identity
 - checked-in direct-distribution scripts remaining aligned with the intended notarized-download release path
+- first installed launch defaulting login-item registration on without re-enabling after later user opt-out
 - menu-bar status presentation showing explicit ready/paused state with the installed icon metadata
 - one TextEdit window on a secondary workspace, restored when that workspace becomes active
 - one full-screen TextEdit window ignored while Finder windows are restored normally
