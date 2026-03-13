@@ -49,7 +49,8 @@ extension SleepWakeCoordinator: RestoreEnvironmentChangeHandling {}
 // that same display returns while Stay is still awake.
 @MainActor
 final class ScreenConfigurationObserver: NSObject {
-    private let logger = Logger(subsystem: "com.stay.app", category: "ScreenConfigurationObserver")
+    private let logger = Logger(
+        subsystem: "net.mattclark.stay", category: "ScreenConfigurationObserver")
     private let center: NotificationCenter
     private let snapshotReader: any SnapshotStoreReading
     private let snapshotWriter: any SnapshotStoreWriting

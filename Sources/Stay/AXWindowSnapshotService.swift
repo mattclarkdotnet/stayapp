@@ -8,7 +8,8 @@ import StayCore
 // Design goal: capture enough stable metadata to restore windows predictably
 // after wake, while tolerating title/index drift between capture and restore.
 final class AXWindowSnapshotService: WindowSnapshotCapturing, WindowSnapshotRestoring {
-    private let logger = Logger(subsystem: "com.stay.app", category: "AXWindowSnapshotService")
+    private let logger = Logger(
+        subsystem: "net.mattclark.stay", category: "AXWindowSnapshotService")
     private static let finderBundleID = "com.apple.finder"
     private let workspace: NSWorkspace
     private let screenService: ScreenCoordinateServicing

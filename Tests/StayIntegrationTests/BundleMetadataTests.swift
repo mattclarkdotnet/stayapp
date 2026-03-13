@@ -15,11 +15,13 @@ struct BundleMetadataTests {
                 as? [String: Any]
         )
 
-        #expect(plist["CFBundleIdentifier"] as? String == "com.stay.app")
+        #expect(plist["CFBundleIdentifier"] as? String == "$(PRODUCT_BUNDLE_IDENTIFIER)")
         #expect(plist["CFBundleExecutable"] as? String == "Stay")
         #expect(plist["CFBundleName"] as? String == "Stay")
         #expect(plist["CFBundleDisplayName"] as? String == "Stay")
         #expect(plist["CFBundlePackageType"] as? String == "APPL")
+        #expect(plist["CFBundleIconName"] as? String == "AppIcon")
+        #expect(plist["LSApplicationCategoryType"] as? String == "public.app-category.utilities")
         #expect(plist["LSMinimumSystemVersion"] as? String == "26.0")
         #expect(plist["LSUIElement"] as? Bool == true)
         #expect(plist["NSPrincipalClass"] as? String == "NSApplication")

@@ -13,7 +13,7 @@ public enum EnvironmentChangeKind: String, Sendable {
 // repeated or out-of-order events and delays restore until conditions are safe.
 /// Coordinates capture on sleep and retrying restore attempts after wake.
 public final class SleepWakeCoordinator {
-    private let logger = Logger(subsystem: "com.stay.app", category: "SleepWakeCoordinator")
+    private let logger = Logger(subsystem: "net.mattclark.stay", category: "SleepWakeCoordinator")
 
     private let capturing: WindowSnapshotCapturing
     private let restoring: WindowSnapshotRestoring

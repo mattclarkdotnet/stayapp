@@ -1,25 +1,25 @@
-# Plan: Distribution
+# Plan: Direct Distribution
 
 ## Roadmap alignment
 
-- This plan implements `ROADMAP.md` `Now` by turning the notarized local app bundle flow into a repeatable distribution path, starting with TestFlight-facing requirements and then App Store delivery.
+- This plan implements `ROADMAP.md` `Now` by turning the existing bundle/install/notarization work into the supported direct-distribution path for Stay.
 
 ## Objective
 
-- Produce the smallest credible release pipeline that moves Stay from a locally installable notarized app toward real distribution without destabilizing the validated runtime behavior, while assuming TestFlight/App Store work will need extra metadata, entitlements, and App Store Connect decisions beyond the current local notarized Developer ID flow.
+- Produce the smallest credible direct-download release workflow that preserves Stay's validated runtime behavior and avoids App Store-specific constraints that conflict with Accessibility window control.
 
 ## Scenario mapping
 
-- A release build can be produced from the repository with the signing/trust properties required for external distribution.
-- Distribution-specific metadata and packaging choices remain aligned with the current menu-bar-only app behavior and login-item support.
-- The path to TestFlight is explicit, and any App Store-specific gaps are documented rather than being left implicit.
+- A developer can build, install, notarize, and staple a release-ready `Stay.app` directly from the repository.
+- Direct-distribution metadata remains aligned with the installed menu-bar app identity and launch-at-login support.
+- Unsupported App Store/TestFlight release paths are removed so the repo reflects the actual supported product goal.
 
 ## Exit criteria
 
-- The distribution workflow is documented clearly enough to produce a repeatable release candidate.
-- Existing focused restore and login-item verification remain green after the distribution changes.
-- Any remaining App Store or TestFlight blockers are captured explicitly if they cannot be solved in the first slice.
+- The direct-distribution workflow is documented clearly enough to produce a repeatable notarized release candidate.
+- Existing focused bundle and launch-at-login verification remain green after the distribution changes.
+- No checked-in docs, tests, or scripts still imply that Mac App Store or TestFlight distribution is supported.
 
 ## Promotion rule
 
-- Promote this plan only after at least one real distribution path is proven end-to-end; if App Store requirements exceed the first slice, finish the TestFlight-ready path and record the remaining App Store work explicitly.
+- Promote this plan once the repository's documented release path is the notarized direct-download flow and the unsupported App Store/TestFlight path has been removed cleanly.

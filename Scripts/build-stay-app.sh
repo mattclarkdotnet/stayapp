@@ -9,6 +9,10 @@ BUILD_ROOT="${BUILD_ROOT:-$ROOT_DIR/dist}"
 APP_BUNDLE="$BUILD_ROOT/$APP_NAME"
 INFO_PLIST_SOURCE="$ROOT_DIR/AppBundle/Info.plist"
 SIGNING_IDENTITY=${SIGNING_IDENTITY:-}
+MARKETING_VERSION=${MARKETING_VERSION:-0.1.0}
+CURRENT_PROJECT_VERSION=${CURRENT_PROJECT_VERSION:-1}
+PRODUCT_BUNDLE_IDENTIFIER=${PRODUCT_BUNDLE_IDENTIFIER:-net.mattclark.stay}
+ASSET_CATALOG_SOURCE="$ROOT_DIR/AppBundle/Assets.xcassets"
 
 if [[ ! -f "$INFO_PLIST_SOURCE" ]]; then
   echo "Missing Info.plist template at $INFO_PLIST_SOURCE" >&2
@@ -32,24 +36,46 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 /usr/bin/ditto "$EXECUTABLE" "$APP_BUNDLE/Contents/MacOS/Stay"
 /usr/bin/ditto "$INFO_PLIST_SOURCE" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $PRODUCT_BUNDLE_IDENTIFIER" \
+  "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $MARKETING_VERSION" \
+  "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $CURRENT_PROJECT_VERSION" \
+  "$APP_BUNDLE/Contents/Info.plist"
+
+if [[ -d "$ASSET_CATALOG_SOURCE" ]] && command -v xcrun >/dev/null 2>&1; then
+  xcrun actool "$ASSET_CATALOG_SOURCE" \
+    --compile "$APP_BUNDLE/Contents/Resources" \
+    --output-format human-readable-text \
+    --notices \
+    --warnings \
+    --app-icon AppIcon \
+    --development-region en \
+    --target-device mac \
+    --minimum-deployment-target 26.0 \
+    --platform macosx \
+    --bundle-identifier "$PRODUCT_BUNDLE_IDENTIFIER" \
+    >/dev/null
+fi
 
 if command -v codesign >/dev/null 2>&1; then
   if [[ -z "$SIGNING_IDENTITY" ]]; then
     SIGNING_IDENTITY=$(
       /usr/bin/security find-identity -v -p codesigning 2>/dev/null \
-        | /usr/bin/awk -F'"' '/Developer ID Application:/ { print $2; exit }'
+        | /usr/bin/awk '/Developer ID Application:/ { print $2; exit }'
     )
   fi
 
   if [[ -z "$SIGNING_IDENTITY" ]]; then
     SIGNING_IDENTITY=$(
       /usr/bin/security find-identity -v -p codesigning 2>/dev/null \
-        | /usr/bin/awk -F'"' '/Apple Development:/ { print $2; exit }'
+        | /usr/bin/awk '/Apple Development:/ { print $2; exit }'
     )
   fi
 
   CODESIGN_ARGS=(--force --sign "$SIGNING_IDENTITY" --timestamp=none)
-  if [[ "$SIGNING_IDENTITY" == Developer\ ID\ Application:* ]]; then
+  if [[ -n "$SIGNING_IDENTITY" ]] && /usr/bin/security find-identity -v -p codesigning 2>/dev/null \
+    | /usr/bin/grep -q "^ *[0-9][0-9]*) $SIGNING_IDENTITY \".*Developer ID Application:"; then
     CODESIGN_ARGS=(--force --sign "$SIGNING_IDENTITY" --timestamp --options runtime)
   fi
 

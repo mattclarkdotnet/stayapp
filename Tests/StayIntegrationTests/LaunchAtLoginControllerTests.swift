@@ -10,7 +10,7 @@ struct LaunchAtLoginControllerTests {
     func installedBundleEnabledStatus() {
         let controller = LaunchAtLoginController(
             bundleURL: URL(fileURLWithPath: "/Applications/Stay.app", isDirectory: true),
-            bundleIdentifier: "com.stay.app",
+            bundleIdentifier: "net.mattclark.stay",
             service: StubLoginItemService(status: .enabled)
         )
 
@@ -32,7 +32,7 @@ struct LaunchAtLoginControllerTests {
     func requiresApprovalStatus() {
         let controller = LaunchAtLoginController(
             bundleURL: URL(fileURLWithPath: "/Applications/Stay.app", isDirectory: true),
-            bundleIdentifier: "com.stay.app",
+            bundleIdentifier: "net.mattclark.stay",
             service: StubLoginItemService(status: .requiresApproval)
         )
 
@@ -43,7 +43,7 @@ struct LaunchAtLoginControllerTests {
     func notFoundStatusBehavesLikeDisabled() {
         let controller = LaunchAtLoginController(
             bundleURL: URL(fileURLWithPath: "/Applications/Stay.app", isDirectory: true),
-            bundleIdentifier: "com.stay.app",
+            bundleIdentifier: "net.mattclark.stay",
             service: StubLoginItemService(status: .notFound)
         )
 
@@ -55,7 +55,7 @@ struct LaunchAtLoginControllerTests {
         let service = StubLoginItemService(status: .notRegistered)
         let controller = LaunchAtLoginController(
             bundleURL: URL(fileURLWithPath: "/Applications/Stay.app", isDirectory: true),
-            bundleIdentifier: "com.stay.app",
+            bundleIdentifier: "net.mattclark.stay",
             service: service
         )
 
@@ -70,7 +70,7 @@ struct LaunchAtLoginControllerTests {
         let service = StubLoginItemService(status: .enabled)
         let controller = LaunchAtLoginController(
             bundleURL: URL(fileURLWithPath: "/Applications/Stay.app", isDirectory: true),
-            bundleIdentifier: "com.stay.app",
+            bundleIdentifier: "net.mattclark.stay",
             service: service
         )
 

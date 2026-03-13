@@ -7,7 +7,8 @@ import StayCore
 // If any window lacks a captured display ID, readiness remains false so coordinator
 // keeps retrying (with timeout fallback) instead of restoring too early.
 final class DisplayWakeReadinessChecker: RestoreReadinessChecking {
-    private let logger = Logger(subsystem: "com.stay.app", category: "DisplayWakeReadinessChecker")
+    private let logger = Logger(
+        subsystem: "net.mattclark.stay", category: "DisplayWakeReadinessChecker")
 
     func isReady(toRestore snapshots: [WindowSnapshot]) -> Bool {
         guard !snapshots.isEmpty else {

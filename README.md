@@ -32,6 +32,7 @@ This stages a launchable `Stay.app` bundle at `dist/Stay.app`.
 If a `Developer ID Application` signing identity is available locally, the script uses it automatically.
 Otherwise it falls back to `Apple Development`, and only then to ad-hoc signing.
 When using `Developer ID Application`, the bundle is signed with hardened runtime so it is notarization-ready.
+The default distribution bundle identifier is `net.mattclark.stay`.
 
 ## Install
 
@@ -39,7 +40,6 @@ When using `Developer ID Application`, the bundle is signed with hardened runtim
 ./Scripts/install-stay-app.sh
 ```
 
-By default this installs `Stay.app` into `~/Applications`.
 By default this installs `Stay.app` into `/Applications`.
 
 Launch it normally with:

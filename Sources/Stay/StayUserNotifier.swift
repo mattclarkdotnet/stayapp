@@ -9,7 +9,7 @@ protocol StayUserNotifying {
 // Design goal: best-effort user feedback without coupling launch policy to
 // notification-center authorization state.
 final class StayUserNotificationCenter: StayUserNotifying {
-    private let logger = Logger(subsystem: "com.stay.app", category: "UserNotifications")
+    private let logger = Logger(subsystem: "net.mattclark.stay", category: "UserNotifications")
     private let center: UNUserNotificationCenter
 
     init(center: UNUserNotificationCenter = .current()) {
@@ -56,7 +56,7 @@ final class StayUserNotificationCenter: StayUserNotifying {
         content.sound = .default
 
         let request = UNNotificationRequest(
-            identifier: "com.stay.app.notifications.separate-spaces-paused",
+            identifier: "net.mattclark.stay.notifications.separate-spaces-paused",
             content: content,
             trigger: nil
         )

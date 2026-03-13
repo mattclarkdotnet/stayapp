@@ -38,7 +38,7 @@ This separation keeps OS-specific behavior out of core logic and allows determin
 ## Bundling And Installability
 
 - The repository now carries a checked-in `AppBundle/Info.plist` that defines the
-  app bundle identity (`com.stay.app`), accessory-app behavior (`LSUIElement`),
+  app bundle identity (`net.mattclark.stay`), accessory-app behavior (`LSUIElement`),
   minimum macOS version, and executable name.
 - `Scripts/build-stay-app.sh` builds the release executable and stages a
   launchable `dist/Stay.app` bundle with the expected `Contents` layout.
@@ -50,14 +50,18 @@ This separation keeps OS-specific behavior out of core logic and allows determin
 - `Scripts/install-stay-app.sh` copies that staged bundle into `/Applications`
   by default so Stay can be launched as a normal installed app rather than only
   from a transient SwiftPM build path.
+- The repository includes a checked-in asset catalog so the staged app has a
+  stable icon identity in Finder, System Settings, and Login Items.
 - `Scripts/store-notary-credentials.sh` and `Scripts/notarize-stay-app.sh` provide the
   minimal notarization path needed to turn the staged app bundle into a stapled,
   Gatekeeper-trusted artifact for login-item validation.
-- The bundle/install scripts intentionally stop short of login-item registration
-  and App Store/TestFlight distribution; those remain separate roadmap items.
+- Direct distribution is intentionally built around Developer ID signing plus
+  notarization, not Mac App Store/TestFlight packaging. Stay's core feature set
+  depends on Accessibility-based control of other apps' windows, so the supported
+  product path is a notarized direct download rather than an App Sandbox build.
 
 Why: later productization work needs a stable macOS app bundle identity first,
-so installability comes before login-item and distribution plumbing.
+then a repeatable notarization path, before release artifacts can be shared safely.
 
 ## Runtime Flow
 

@@ -7,7 +7,7 @@ import StayCore
 // (timing, readiness checks, persistence wiring) in one place.
 @MainActor
 final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
-    private let logger = Logger(subsystem: "com.stay.app", category: "AppDelegate")
+    private let logger = Logger(subsystem: "net.mattclark.stay", category: "AppDelegate")
     private let separateSpacesPolicy: SeparateSpacesSuspensionPolicy
     private let notifierFactory: () -> any StayUserNotifying
     private let launchAtLoginController: any LaunchAtLoginControlling

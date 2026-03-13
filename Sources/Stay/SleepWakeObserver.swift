@@ -7,7 +7,7 @@ import StayCore
 // without adding state or business logic in the observer layer.
 @MainActor
 final class SleepWakeObserver: NSObject {
-    private let logger = Logger(subsystem: "com.stay.app", category: "SleepWakeObserver")
+    private let logger = Logger(subsystem: "net.mattclark.stay", category: "SleepWakeObserver")
     private let center: NotificationCenter
     private let coordinator: SleepWakeCoordinator
 

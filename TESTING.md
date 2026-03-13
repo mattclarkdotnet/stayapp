@@ -174,6 +174,7 @@ Scope:
 - awake-time same-display disconnect/reconnect restore behavior
 - post-wake restore deferring windows whose saved display is still unavailable
 - bundle metadata and bundle staging/install scripts
+- direct-distribution script alignment
 - launch-at-login state/control logic for installed app bundles
 - notarization-ready signing and stapling workflow for Developer ID builds
 - real-app capture/restore scenarios without sleep (from `Tests/SCENARIOS.md`)
@@ -188,10 +189,12 @@ How:
 - run `swift test --filter 'JSONSnapshotRepositoryTests|ScreenConfigurationObserverTests'`
 - run `swift test --filter AXWindowSnapshotServiceTests`
 - run `swift test --filter BundleMetadataTests`
+- run `swift test --filter DirectDistributionScriptTests`
 - run `swift test --filter LaunchAtLoginControllerTests`
 - for guided awake-time hardware QA, run `swift run WakeCycleScenarios awake-display finder|app`
 - run `swift test --filter StayIntegrationTests.RealAppScenarioTests`
 - run `./Scripts/build-stay-app.sh` to verify the bundle can be staged successfully
+- run `./Scripts/install-stay-app.sh` to verify the installed app path remains correct
 - when validating launch-at-login, prefer a build signed with a local `Developer ID Application` identity
 - run `NOTARY_PROFILE=... ./Scripts/notarize-stay-app.sh` to validate notarization/stapling when credentials are available
 - tests launch real apps (Finder/TextEdit/FreeCAD/KiCad), move real windows across screens,
@@ -200,7 +203,7 @@ How:
   out of the restorable snapshot set while normal Finder restore still succeeds
 - scripted Finder/TextEdit scenarios reset the target app before setup so stale windows do not
   carry across repeated runs
-- use logs (`log stream --predicate 'subsystem == "com.stay.app"'`) when investigating failures
+- use logs (`log stream --predicate 'subsystem == "net.mattclark.stay"'`) when investigating failures
 - for full sleep/wake scenarios, prefer single-command cycle mode:
   1. `swift run WakeCycleScenarios cycle finder|app|app-workspace|freecad|kicad`
   2. let the machine sleep

@@ -2,9 +2,9 @@
 
 ## Now
 
-1. Distribution
-- Prepare Stay for TestFlight distribution first, then App Store distribution.
-- Capture the packaging/signing requirements separately from installability so release work can progress without blocking local productization.
+1. Direct distribution
+- Produce a repeatable notarized direct-download release flow for the full Stay app.
+- Keep distribution centered on Developer ID signing and notarization rather than App Store sandboxing, because Stay depends on Accessibility-based window management.
 
 ## Next
 
