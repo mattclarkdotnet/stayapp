@@ -103,17 +103,35 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
 
     private func configureStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "Stay"
+        if let button = item.button {
+            let image = NSImage(
+                systemSymbolName: StayMenuPresentation.menuBarSymbolName,
+                accessibilityDescription: StayMenuPresentation.menuBarAccessibilityDescription
+            )
+            image?.isTemplate = true
+            button.image = image
+            button.imagePosition = .imageOnly
+            button.title = ""
+            button.toolTip = StayMenuPresentation.menuBarAccessibilityDescription
+        }
         statusItem = item
         rebuildMenu()
     }
 
     private func rebuildMenu() {
         let menu = NSMenu()
+        let presentation = StayMenuPresentation(
+            statusDetail: statusLine,
+            isPaused: isPausedForSeparateSpaces
+        )
 
-        let status = NSMenuItem(title: statusLine, action: nil, keyEquivalent: "")
-        status.isEnabled = false
-        menu.addItem(status)
+        let stateItem = NSMenuItem(title: presentation.stateTitle, action: nil, keyEquivalent: "")
+        stateItem.isEnabled = false
+        menu.addItem(stateItem)
+
+        let detailItem = NSMenuItem(title: presentation.detailTitle, action: nil, keyEquivalent: "")
+        detailItem.isEnabled = false
+        menu.addItem(detailItem)
 
         menu.addItem(.separator())
         let launchAtLoginStatus = launchAtLoginController.status()
@@ -162,6 +180,8 @@ final class StayApplicationDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(makeMenuItem(title: "Quit Stay", action: #selector(quit), key: "q"))
 
         statusItem?.menu = menu
+        statusItem?.button?.toolTip =
+            "\(StayMenuPresentation.menuBarAccessibilityDescription): \(presentation.stateTitle)"
     }
 
     private func makeMenuItem(title: String, action: Selector, key: String) -> NSMenuItem {

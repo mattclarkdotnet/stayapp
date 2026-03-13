@@ -17,6 +17,7 @@ Automated tests cover two layers:
 - Bundle metadata tests: `Tests/StayIntegrationTests/BundleMetadataTests.swift`
 - Direct-distribution script tests: `Tests/StayIntegrationTests/DirectDistributionScriptTests.swift`
 - Launch-at-login tests: `Tests/StayIntegrationTests/LaunchAtLoginControllerTests.swift`
+- Menu presentation tests: `Tests/StayIntegrationTests/StayMenuPresentationTests.swift`
 - Fixture round-trip tests: `Tests/StayIntegrationTests/WindowRoundTripTests.swift`
 - Restore availability tests: `Tests/StayIntegrationTests/AXWindowSnapshotServiceTests.swift`
 - Separate-spaces policy tests: `Tests/StayIntegrationTests/SeparateSpacesPolicyTests.swift`
@@ -65,6 +66,12 @@ To run the bundle metadata coverage:
 
 ```bash
 swift test --filter BundleMetadataTests
+```
+
+To run the menu presentation coverage:
+
+```bash
+swift test --filter StayMenuPresentationTests
 ```
 
 To run the direct-distribution script coverage:
@@ -213,6 +220,7 @@ Scenarios currently automated from `SCENARIOS.md`:
 - post-wake missing-display snapshots staying deferred instead of being remapped to an available screen
 - checked-in app-bundle metadata remaining aligned with the intended `Stay.app` identity
 - checked-in direct-distribution scripts remaining aligned with the intended notarized-download release path
+- menu-bar status presentation showing explicit ready/paused state with the installed icon metadata
 - one TextEdit window on a secondary workspace, restored when that workspace becomes active
 - one full-screen TextEdit window ignored while Finder windows are restored normally
 - FreeCAD main window + child windows (tasks/model/report/python console) across two screens

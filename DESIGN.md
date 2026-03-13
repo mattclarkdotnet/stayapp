@@ -26,6 +26,7 @@ The app is split into two layers:
 
 2. `Stay` (macOS integration)
 - App lifecycle and menu bar UI (`StayApplicationDelegate`)
+- pure menu-presentation mapping for icon/state/detail display (`StayMenuPresentation`)
 - launch-time separate-spaces policy gate and user notification
 - macOS sleep/wake notification observer
 - awake-time screen-configuration observer for snapshot suspension and same-display reconnect restore
@@ -68,6 +69,8 @@ then a repeatable notarization path, before release artifacts can be shared safe
 ### 1. Launch
 
 - `main.swift` starts an accessory app (menu bar utility, no dock window).
+- The status item presents Stay with an icon-first menu-bar button rather than a
+  text label, so the installed app behaves like a normal macOS menu-bar utility.
 - `StayApplicationDelegate` first reads `com.apple.spaces` `spans-displays`.
 - If `Displays have separate Spaces` is enabled, Stay:
   - does not start sleep/wake capture or restore services
@@ -160,8 +163,13 @@ discarding pending workspace state after a single AX pass.
 - Stay does not create a `SleepWakeCoordinator` or `SleepWakeObserver`, so it does not
   capture on sleep or restore on wake.
 - Manual menu actions remain visible for discoverability but are disabled.
+- The menu's top state remains explicit while paused: Stay shows `Status: Paused`
+  alongside the pause detail so the user does not have to infer that from a
+  one-time notification or missing restore behavior.
 - Notification delivery is best-effort: if the user has denied notification permission,
   the menu-bar status line still explains that Stay is paused.
+- When Stay is active, the menu shows `Status: Ready` and keeps transient detail
+  text separate from that operating-state label.
 - Stay does not watch for runtime changes to `spans-displays`; macOS applies that toggle
   on the next logout/login cycle, so a fresh Stay launch picks up the correct mode.
 
